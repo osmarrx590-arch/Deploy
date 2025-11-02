@@ -1,0 +1,6 @@
+{
+  "nome": "Teste CLI",
+  "email": "teste-cli@example.com",
+  "password": "senha123",
+  "tipo": "online"
+}
