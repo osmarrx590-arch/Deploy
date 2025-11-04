@@ -1,15 +1,9 @@
 import * as mesaService from '@/services/mesaService';
+import apiServices from '@/services/apiServices';
 
 export const cancelarPedido = async (mesaId: number): Promise<void> => {
   try {
-    const res = await fetch(`${import.meta.env.VITE_BACKEND_URL ?? 'http://localhost:8000'}/pedidos/${mesaId}/cancelar`, {
-      method: 'POST',
-      credentials: 'include'
-    });
-
-    if (!res.ok) {
-      throw new Error('API retornou erro');
-    }
+    await apiServices.pedidoService.cancelar(mesaId);
 
     return;
   } catch (error) {

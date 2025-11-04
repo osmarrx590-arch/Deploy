@@ -33,8 +33,8 @@ export const sincronizarPedidoParaMesa = (pedido_id: number, novoStatusPedido: S
 
   const statusMesa = STATUS_MAPPING.pedido_to_mesa[novoStatusPedido];
   if (statusMesa) {
-    mesaService.atualizarMesa(pedido.mesaId, {
-      status: statusMesa === 'Livre' ? 'Livre' : 'Ocupada',
+      mesaService.atualizarMesa(pedido.mesaId, {
+        status: statusMesa === 'livre' ? 'livre' : 'ocupada',
       statusPedido: statusMesa
     });
 
@@ -46,7 +46,7 @@ export const sincronizarPedidoParaMesa = (pedido_id: number, novoStatusPedido: S
       
       // Limpa a mesa
       mesaService.atualizarMesa(pedido.mesaId, {
-        status: 'Livre',
+  status: 'livre',
         pedido: 0,
         itens: [],
         usuarioId: undefined,
@@ -60,7 +60,7 @@ export const sincronizarPedidoParaMesa = (pedido_id: number, novoStatusPedido: S
       
       // Limpa a mesa
       mesaService.atualizarMesa(pedido.mesaId, {
-        status: 'Livre',
+        status: 'livre',
         pedido: 0,
         itens: [],
         usuarioId: undefined,

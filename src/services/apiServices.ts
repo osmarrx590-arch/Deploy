@@ -105,6 +105,29 @@ export const mesaService = {
       method: 'DELETE',
     });
   },
+  
+  // Adiciona item à mesa (delegando ao backend)
+  async adicionarItem(mesaId: number, data: { produtoId: number; quantidade: number; nome?: string; precoUnitario?: number; usuarioId?: number; numero?: number }) {
+    return apiFetch(`/mesas/${mesaId}/itens`, {
+      method: 'POST',
+      body: JSON.stringify(data),
+    });
+  },
+
+  // Remove um item da mesa
+  async removerItem(mesaId: number, itemId: number) {
+    return apiFetch(`/mesas/${mesaId}/itens/${itemId}`, {
+      method: 'DELETE',
+    });
+  },
+  
+  // Processa pagamento para uma mesa via backend
+  async processarPagamento(mesaId: number, payload: { metodo: string; itens: unknown[]; total: number; pedidoNumero?: number }) {
+    return apiFetch(`/mesas/${mesaId}/pagamento`, {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    });
+  },
 };
 
 // === EMPRESAS ===
@@ -121,6 +144,31 @@ export const empresaService = {
   },
 };
 
+// === CATEGORIAS ===
+export const categoriaService = {
+  async getAll(): Promise<{ id: number; nome: string; descricao?: string }[]> {
+    return apiFetch('/categorias/');
+  },
+  async create(payload: { nome: string; descricao?: string }) {
+    return apiFetch('/categorias/', {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    });
+  },
+  async update(id: number, payload: { nome: string; descricao?: string }) {
+    return apiFetch(`/categorias/${id}`, {
+      method: 'PUT',
+      body: JSON.stringify(payload),
+    });
+  },
+  async delete(id: number) {
+    return apiFetch(`/categorias/${id}`, {
+      method: 'DELETE',
+    });
+  }
+};
+
+
 // === PEDIDOS ===
 export const pedidoService = {
   async getAll(): Promise<PedidoLocal[]> {
@@ -134,12 +182,36 @@ export const pedidoService = {
     });
   },
 
+  async cancelar(pedidoId: number) {
+    return apiFetch(`/pedidos/${pedidoId}/cancelar`, {
+      method: 'POST'
+    });
+  },
+
   async updateStatus(id: number, status: PedidoLocal['status']): Promise<void> {
     await apiFetch(`/pedidos/${id}/status`, {
       method: 'PUT',
       body: JSON.stringify({ status }),
     });
   },
+};
+
+// === AVALIACOES ===
+export const avaliacaoService = {
+  async getByProduto(produtoId: number) {
+    return apiFetch(`/avaliacoes/${produtoId}`);
+  },
+  async create(payload: { produtoId: number; rating: number; comentario?: string }) {
+    return apiFetch('/avaliacoes/', {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    });
+  },
+  async remove(produtoId: number) {
+    return apiFetch(`/avaliacoes/${produtoId}`, {
+      method: 'DELETE',
+    });
+  }
 };
 
 // === ESTOQUE ===
@@ -162,6 +234,8 @@ export default {
   empresaService,
   pedidoService,
   estoqueService,
+  categoriaService,
+  avaliacaoService,
 };
 // === CHECKOUT / PAGAMENTOS ===
 export const checkoutService = {

@@ -26,6 +26,8 @@ import { produtosLocais } from '@/data/produtos_locais';
 import { produtoStorage } from '@/services/storageService';
 import { categoriaStorage } from '@/services/storageService';
 import { Categoria } from '@/types/categoria';
+import apiServices from '@/services/apiServices';
+import { mapBackendProdutoToLocal } from '@/lib/productMapper';
 
 const ITEMS_PER_PAGE = 5;
 
@@ -46,14 +48,19 @@ const CategoriaList = () => {
   const [deletingCategoria, setDeletingCategoria] = useState<Categoria | null>(null);
 
   useEffect(() => {
+    console.log('🔍 [CategoriaList] Iniciando carregamento de categorias...');
     const categoriasStoradas = categoriaStorage.getAll();
+    console.log('📦 [CategoriaList] Categorias no localStorage:', categoriasStoradas);
 
     // Se não há categorias salvas, inicializar com categorias dos produtos (fallback)
     if (categoriasStoradas.length === 0) {
+      console.log('⚠️ [CategoriaList] Nenhuma categoria encontrada, criando do zero...');
       const produtos = produtoStorage.getAll();
+      console.log('📦 [CategoriaList] Produtos encontrados:', produtos.length);
       const categoriasUnicas = Array.from(
         new Set(produtos.map(produto => produto.categoria))
       ).filter(categoria => categoria && categoria.trim() !== '');
+      console.log('📂 [CategoriaList] Categorias únicas extraídas:', categoriasUnicas);
 
       const categoriasIniciais = categoriasUnicas.map((nome, index) => ({
         id: index + 1,
@@ -62,40 +69,108 @@ const CategoriaList = () => {
 
       categoriaStorage.save(categoriasIniciais);
       setCategorias(categoriasIniciais);
+      console.log('✅ [CategoriaList] Categorias iniciais criadas:', categoriasIniciais);
     } else {
       setCategorias(categoriasStoradas);
+      console.log('✅ [CategoriaList] Categorias carregadas do localStorage');
     }
   }, []);
-
-  // Backend base URL
-  const backendUrl = import.meta.env.VITE_BACKEND_URL ?? 'http://localhost:8000';
 
   // Sincroniza categorias com o backend ao montar
   useEffect(() => {
     const syncCategorias = async () => {
+      console.log('🔄 [CategoriaList] Tentando sincronizar com backend...');
       try {
-        const res = await fetch(`${backendUrl}/categorias/`);
-        if (res.ok) {
-          const cats = await res.json();
-          setCategorias(cats);
-          categoriaStorage.save(cats);
+        const cats = await apiServices.categoriaService.getAll();
+        console.log('🌐 [CategoriaList] Resposta do backend:', cats);
+        if (cats && Array.isArray(cats)) {
+          const catsTyped = cats as Categoria[];
+          setCategorias(catsTyped);
+          categoriaStorage.save(catsTyped);
+          console.log('✅ [CategoriaList] Categorias sincronizadas com backend:', catsTyped.length);
+
+          // Ao sincronizar categorias, tentar também sincronizar os produtos do backend
+          try {
+            const produtosBackend = await apiServices.produtoService.getAll();
+            if (Array.isArray(produtosBackend) && produtosBackend.length > 0) {
+              // mapear produtos do backend para a forma local usando as categorias recém carregadas
+              // import mapBackendProdutoToLocal no topo do arquivo é necessário
+              // usamos um array vazio para empresas (se necessário, melhorar depois)
+              const mapped = (produtosBackend as unknown[]).map(p => mapBackendProdutoToLocal(p, catsTyped, []));
+              produtoStorage.save(mapped);
+              console.log('[CategoriaList] Produtos sincronizados do backend para localStorage:', mapped.length);
+            }
+          } catch (prodErr) {
+            console.debug('[CategoriaList] Falha ao sincronizar produtos do backend (não bloqueia):', prodErr);
+          }
         }
       } catch (err) {
+        console.warn('❌ [CategoriaList] Erro ao sincronizar com backend:', err);
         console.debug('Não foi possível carregar categorias do backend, usando localStorage');
       }
     };
     void syncCategorias();
-  }, [backendUrl]);
+  }, []);
 
   const categoriasFiltradas = categorias.filter(categoria =>
     categoria.nome.toLowerCase().includes(searchTerm.toLowerCase())
   );
 
   const getProdutosPorCategoria = (categoria: Categoria) => {
+    console.log(`🔍 [getProdutosPorCategoria] Buscando produtos para categoria:`, categoria);
     const produtos = produtoStorage.getAll();
-    return produtos.filter(produto =>
-      (produto.categoria || 'Sem Categoria') === categoria.nome
-    ).length;
+    console.log(`📦 [getProdutosPorCategoria] Total de produtos no storage:`, produtos.length);
+    
+    const catName = String(categoria.nome || '');
+    const catId = Number(categoria.id);
+    console.log(`🏷️ [getProdutosPorCategoria] Procurando por - Nome: "${catName}", ID: ${catId}`);
+
+    const produtosFiltrados = produtos.filter(produto => {
+      // produto.categoria pode ser nome ou id (string/number) ou objeto
+      const prod = produto as unknown as Record<string, unknown>;
+      const prodCatRaw = prod['categoria'] ?? prod['categoriaId'] ?? prod['categoria_id'] ?? '';
+
+      console.log(`  📝 Produto "${prod['nome']}" - categoria raw completa:`, JSON.stringify(prodCatRaw), `(tipo: ${typeof prodCatRaw})`);
+
+      // PRIMEIRO: verificar se é um objeto (mais comum) — comparar por id então por nome (case-sensitive)
+      if (typeof prodCatRaw === 'object' && prodCatRaw !== null) {
+        const catObj = prodCatRaw as Record<string, unknown>;
+        const objId = Number(catObj['id'] ?? 0);
+        const objNome = String(catObj['nome'] ?? '');
+
+        console.log(`    🔍 É objeto - nome: "${objNome}", id: ${objId}`);
+
+        if (objId && objId === catId) {
+          console.log(`    ✅ Match por objeto.id: ${objId} === ${catId}`);
+          return true;
+        }
+
+        if (objNome && objNome === catName) {
+          console.log(`    ✅ Match por objeto.nome: "${objNome}" === "${catName}"`);
+          return true;
+        }
+      }
+
+      // SEGUNDO: verificar se é string (nome da categoria) — usar igualdade exata (case-sensitive)
+      const prodCatStr = String(prodCatRaw ?? '');
+      if (prodCatStr && prodCatStr !== '[object Object]' && prodCatStr === catName) {
+        console.log(`    ✅ Match por string nome: "${prodCatStr}" === "${catName}"`);
+        return true;
+      }
+
+      // TERCEIRO: verificar se é número (id da categoria)
+      const prodCatNum = Number(prodCatRaw);
+      if (!isNaN(prodCatNum) && prodCatNum === catId) {
+        console.log(`    ✅ Match por número ID: ${prodCatNum} === ${catId}`);
+        return true;
+      }
+
+      console.log(`    ❌ Sem match`);
+      return false;
+    });
+    
+    console.log(`📊 [getProdutosPorCategoria] Resultado: ${produtosFiltrados.length} produto(s) encontrado(s) para "${categoria.nome}"`);
+    return produtosFiltrados.length;
   };
 
   const handleOpenDialog = (categoria?: Categoria) => {
@@ -130,14 +205,10 @@ const CategoriaList = () => {
       if (editingCategoria) {
         // Tenta atualizar no backend
         try {
-          const res = await fetch(`${backendUrl}/categorias/${editingCategoria.id}`, {
-            method: 'PUT',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ nome: novaCategoria, descricao: '' })
-          });
-          if (res.ok) {
-            const updated = await res.json();
-            const atualizadas = categorias.map((cat) => cat.id === editingCategoria.id ? { ...cat, nome: updated.nome } : cat);
+          const updated = await apiServices.categoriaService.update?.(editingCategoria.id, { nome: novaCategoria, descricao: '' }) ?? null;
+          if (updated) {
+            const updatedTyped = updated as Categoria;
+            const atualizadas = categorias.map((cat) => cat.id === editingCategoria.id ? { ...cat, nome: updatedTyped.nome || novaCategoria } : cat);
             setCategorias(atualizadas);
             categoriaStorage.save(atualizadas);
             handleCloseDialog();
@@ -154,14 +225,10 @@ const CategoriaList = () => {
       } else {
         // Criar categoria no backend
         try {
-          const res = await fetch(`${backendUrl}/categorias/`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ nome: novaCategoria, descricao: '' })
-          });
-          if (res.ok) {
-            const created = await res.json();
-            const atualizadas = [...categorias, created];
+          const created = await apiServices.categoriaService.create?.({ nome: novaCategoria, descricao: '' }) ?? null;
+          if (created) {
+            const createdTyped = created as Categoria;
+            const atualizadas = [...categorias, createdTyped];
             setCategorias(atualizadas);
             categoriaStorage.save(atualizadas);
             handleCloseDialog();
@@ -198,14 +265,12 @@ const CategoriaList = () => {
 
     const performDelete = async () => {
       try {
-        const res = await fetch(`${backendUrl}/categorias/${deletingCategoria.id}`, { method: 'DELETE' });
-        if (res.ok) {
-          const atualizadas = categorias.filter(cat => cat.id !== deletingCategoria.id);
-          setCategorias(atualizadas);
-          categoriaStorage.save(atualizadas);
-          setDeletingCategoria(null);
-          return;
-        }
+        await apiServices.categoriaService.delete?.(deletingCategoria.id);
+        const atualizadas = categorias.filter(cat => cat.id !== deletingCategoria.id);
+        setCategorias(atualizadas);
+        categoriaStorage.save(atualizadas);
+        setDeletingCategoria(null);
+        return;
       } catch (err) {
         console.debug('DELETE /categorias falhou, utilizando fallback local');
       }

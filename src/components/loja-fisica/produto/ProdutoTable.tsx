@@ -18,6 +18,7 @@ interface ProdutoTableProps {
 }
 
 const ProdutoTable = ({ produtos, onEdit, onDelete, sortConfig, onRequestSort }: ProdutoTableProps) => {
+  console.debug('[ProdutoTable] render com produtos:', produtos.length);
   const handleSort = (key: string) => {
     if (onRequestSort) {
       onRequestSort(key);

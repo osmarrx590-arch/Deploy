@@ -143,7 +143,7 @@ const MesasPages = () => {
   const sourceMesas = mesasEnriched ?? mesas;
 
   const mesasOcupadas = sourceMesas
-    .filter(mesa => mesa.status === 'Ocupada')
+    .filter(mesa => mesa.status === 'ocupada')
     .sort((a, b) => {
       // Normalizar pedido para número quando possível para ordenação correta
       const aPedidoNum = typeof a.pedido === 'number' ? a.pedido : parseInt(String(a.pedido || ''), 10);
@@ -158,7 +158,7 @@ const MesasPages = () => {
     });
 
   const mesasLivres = sourceMesas
-    .filter(mesa => mesa.status === 'Livre')
+    .filter(mesa => mesa.status === 'livre')
     .sort((a, b) => {
       const numA = parseInt(a.nome);
       const numB = parseInt(b.nome);
@@ -175,11 +175,15 @@ const MesasPages = () => {
     return !mesas.some(m => m.nome === num) ? num : null;
   }).filter(Boolean) as string[];
 
+  useEffect(() => {
+    console.log('[MesasPages] counts -> total:', sourceMesas.length, 'livres:', mesasLivres.length, 'ocupadas:', mesasOcupadas.length);
+  }, [sourceMesas, mesasLivres, mesasOcupadas]);
+
   const handleCreateMesa = async (numero: string) => {
     try {
       const novaMesa = await salvarMesa({
         nome: numero,
-        status: 'Livre',
+        status: 'livre',
         pedido: 0
       });
       
@@ -209,7 +213,7 @@ const MesasPages = () => {
     try {
       const novaMesa = await salvarMesa({
         nome: nomeBalcao,
-        status: 'Livre',
+        status: 'livre',
         pedido: 0
       });
       

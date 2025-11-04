@@ -13,18 +13,20 @@ export default defineConfig(({ mode }) => ({
     },
     // Proxy API calls to the backend during development so fetch('/favoritos/') hits FastAPI
     proxy: {
-      // Favoritos and common API endpoints
-      '/favoritos': {
+      // Proxy all API calls to the backend
+      '/api': {
         target: 'http://127.0.0.1:8000',
         changeOrigin: true,
         secure: false,
+        rewrite: (path) => path.replace(/^\/api/, ''),
       },
-      '/pedidos': {
-        target: 'http://127.0.0.1:8000',
-        changeOrigin: true,
-        secure: false,
-      },
+      // Direct proxy for specific endpoints
       '/auth': {
+        target: 'http://127.0.0.1:8000',
+        changeOrigin: true,
+        secure: false,
+      },
+      '/users': {
         target: 'http://127.0.0.1:8000',
         changeOrigin: true,
         secure: false,

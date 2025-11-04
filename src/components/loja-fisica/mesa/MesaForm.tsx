@@ -10,7 +10,7 @@ import { MesaFormData } from '@/types';
 
 const mesaSchema = z.object({
   nome: z.string().min(1, 'Nome é obrigatório'),
-  status: z.enum(['Ocupada', 'Livre']),
+  status: z.enum(['ocupada', 'livre']),
   pedido: z.number().min(0, 'Número do pedido deve ser positivo')
 });
 
@@ -24,7 +24,7 @@ const MesaForm = ({ onSubmit, initialData }: MesaFormProps) => {
     resolver: zodResolver(mesaSchema),
     defaultValues: initialData || {
       nome: '',
-      status: 'Livre',
+      status: 'livre',
       pedido: 0
     }
   });
@@ -51,14 +51,14 @@ const MesaForm = ({ onSubmit, initialData }: MesaFormProps) => {
         <Label htmlFor="status">Status</Label>
         <Select
           value={watch('status')}
-          onValueChange={(value: 'Ocupada' | 'Livre') => setValue('status', value)}
+    onValueChange={(value: 'ocupada' | 'livre') => setValue('status', value)}
         >
           <SelectTrigger>
             <SelectValue placeholder="Selecione o status" />
           </SelectTrigger>
           <SelectContent>
-            <SelectItem value="Livre">Livre</SelectItem>
-            <SelectItem value="Ocupada">Ocupada</SelectItem>
+            <SelectItem value="livre">Livre</SelectItem>
+            <SelectItem value="ocupada">Ocupada</SelectItem>
           </SelectContent>
         </Select>
         {errors.status && (

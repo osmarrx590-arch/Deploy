@@ -1,6 +1,7 @@
 
 import { salvarPedidoNoHistorico } from './pedidoHistoricoService';
 import * as mesaService from '@/services/mesaService';
+import apiServices from '@/services/apiServices';
 import { ItemMesa } from '@/types/mesa';
 import { confirmarConsumoEstoque } from './estoqueReservaService';
 import { registrarSaida } from './movimentacaoEstoqueService';
@@ -31,23 +32,13 @@ export const processarPagamento = async (dados: DadosPagamento): Promise<void> =
 
     // Tentar chamar backend para processar pagamento centralizado
     try {
-      const resp = await fetch(`${import.meta.env.VITE_BACKEND_URL ?? 'http://localhost:8000'}/mesas/${dados.mesaId}/pagamento`, {
-        method: 'POST',
-        credentials: 'include',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          metodo: dados.metodoPagamento,
-          itens: dados.itens,
-          total: dados.total,
-          pedidoNumero: dados.pedidoNumero
-        })
+      // Delegar chamada ao serviço centralizado (backend)
+      const mesaAtualizada = await apiServices.mesaService.processarPagamento(dados.mesaId, {
+        metodo: dados.metodoPagamento,
+        itens: dados.itens,
+        total: dados.total,
+        pedidoNumero: Number(dados.pedidoNumero),
       });
-
-      if (!resp.ok) {
-        throw new Error('Backend returned error');
-      }
-
-      const mesaAtualizada = await resp.json();
       console.log('✅ Pagamento processado via backend, mesa atualizada:', mesaAtualizada);
       return;
     } catch (err) {
@@ -68,7 +59,7 @@ export const processarPagamento = async (dados: DadosPagamento): Promise<void> =
 
       // Libera a mesa (volta ao status 'Livre') localmente
       mesaService.atualizarMesa(dados.mesaId, {
-        status: 'Livre',
+        status: 'livre',
         pedido: 0,
         itens: [],
         usuarioId: undefined,

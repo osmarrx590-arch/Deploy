@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect } from 'react';
 import { Input } from "@/components/ui/input";
 import { useToast } from "@/hooks/use-toast";
@@ -18,6 +19,7 @@ import { DropdownMenu, DropdownMenuTrigger, DropdownMenuContent } from "@/compon
 import { Label } from "@/components/ui/label";
 import { PlusCircleIcon, SlidersHorizontal, Loader2 } from "lucide-react";
 import { Produto, ProdutoTableData } from '@/types/produto';
+import { Categoria } from '@/types/categoria';
 import { mapBackendProdutoToLocal } from '@/lib/productMapper';
 
 import { EmpresaData } from '@/types/empresa';
@@ -52,15 +54,28 @@ const ListarProdutos = () => {
     queryFn: async () => {
       try {
         const ps = await produtoService.getAll();
+  console.log('[ListarProdutos] backend raw produtos:', Array.isArray(ps) ? ps.length : 0, ps);
+  // Log raw response from backend
+  if (typeof console !== 'undefined' && console.debug) console.debug('[ListarProdutos] backend raw produtos:', Array.isArray(ps) ? ps.length : 0, ps);
+
         const categoriasLocal = categoriaStorage.getAll();
         const mapped = ps.map(p => mapBackendProdutoToLocal(p, categoriasLocal, empresas));
+  console.log('[ListarProdutos] produtos mapeados (frontend):', mapped.length, mapped);
+  // Log mapped products that frontend will use
+  if (typeof console !== 'undefined' && console.debug) console.debug('[ListarProdutos] produtos mapeados (frontend):', mapped.length, mapped);
+
         produtoStorage.save(mapped);
         return mapped;
       } catch (err) {
-        return produtoStorage.getAll();
+  const fallback = produtoStorage.getAll();
+  console.log('[ListarProdutos] fallback produtos (localStorage):', fallback.length, fallback);
+  if (typeof console !== 'undefined' && console.debug) console.debug('[ListarProdutos] fallback produtos (localStorage):', fallback.length, fallback);
+  return fallback;
       }
     },
   });
+
+
 
   const [filterCategoria, setFilterCategoria] = useState('');
   const [filterEstoque, setFilterEstoque] = useState('');
@@ -91,13 +106,11 @@ const ListarProdutos = () => {
     const fetchCategorias = async () => {
       try {
         // Tenta usar storageService local (já no useState) como fallback
-        const res = await fetch((import.meta.env.VITE_BACKEND_URL ?? 'http://localhost:8000') + '/categorias/');
-        if (res.ok) {
-          const cats = await res.json();
-          // cats deve ser array de { id, nome, descricao }
-          setCategorias(cats);
-          // salvar no localStorage também
-          categoriaStorage.save(cats);
+        const cats = await (await import('@/services/apiServices')).categoriaService.getAll();
+        if (cats && Array.isArray(cats)) {
+          const catsTyped = cats as Categoria[];
+          setCategorias(catsTyped);
+          categoriaStorage.save(catsTyped);
         }
       } catch (err) {
         // fallback: manter categorias do localStorage (já em state)
@@ -116,6 +129,16 @@ const ListarProdutos = () => {
       }
     }
   }, [slug, produtos]);
+
+  // Debug: log produtos carregados (id, nome, estoque)
+  useEffect(() => {
+    try {
+      console.debug('[ListarProdutos] produtos carregados:', produtos.length);
+      console.debug('[ListarProdutos] estoque por produto:', produtos.map(p => ({ id: p.id, nome: p.nome, estoque: p.estoque })));
+    } catch (e) {
+      /* não quebrar UI caso console não esteja disponível */
+    }
+  }, [produtos]);
 
   const handleCloseDialog = () => {
     setIsDialogOpen(false);
@@ -173,6 +196,15 @@ const ListarProdutos = () => {
     empresa: empresas.find(emp => emp.id === produto.empresaId)?.nome || 'Empresa não encontrada',
     imagem: produto.imagem
   }));
+
+  // Debug: log a página atual de produtos (o que é exibido na tabela)
+  useEffect(() => {
+    try {
+      console.debug('[ListarProdutos] paginatedProdutos (exibidos):', paginatedProdutos.length, paginatedProdutos.map(p => ({ id: p.id, nome: p.nome, estoque: p.estoque })));
+    } catch (e) {
+      // noop
+    }
+  }, [paginatedProdutos]);
 
   const handleSearch = (event: React.ChangeEvent<HTMLInputElement>) => {
     setSearchTerm(event.target.value);
@@ -242,14 +274,15 @@ const ListarProdutos = () => {
           nome: data.nome,
           categoria_id: Number(data.categoria),
           descricao: data.descricao || '',
-          custo: Number(data.custo || 0),
-          venda: Number(data.venda || 0),
           codigo: data.codigo || '',
           estoque: Number(data.estoque || 0),
           disponivel: data.disponivel ?? true,
           empresa_id: Number(data.empresaId),
           imagem: data.imagem || editingProduto.imagem || '',
           slug: data.nome.toLowerCase().replace(/\s+/g, '-'),
+          // Backend espera preco_compra/preco_venda (Decimal) — mapear do formulário custo/venda
+          preco_compra: Number(data.custo || 0),
+          preco_venda: Number(data.venda || 0),
         };
 
   await produtoService.update(editingProduto.id, payload);
@@ -261,14 +294,15 @@ const ListarProdutos = () => {
           nome: data.nome,
           categoria_id: Number(data.categoria),
           descricao: data.descricao || '',
-          custo: Number(data.custo || 0),
-          venda: Number(data.venda || 0),
           codigo: data.codigo || '',
           estoque: Number(data.estoque || 0),
           disponivel: data.disponivel ?? true,
           empresa_id: Number(data.empresaId),
           imagem: data.imagem || '',
           slug: data.nome.toLowerCase().replace(/\s+/g, '-'),
+          // Backend espera preco_compra/preco_venda (Decimal) — mapear do formulário custo/venda
+          preco_compra: Number(data.custo || 0),
+          preco_venda: Number(data.venda || 0),
         };
 
   await produtoService.create(payload);
@@ -455,4 +489,3 @@ const ListarProdutos = () => {
 };
 
 export default ListarProdutos;
-

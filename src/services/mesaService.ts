@@ -50,7 +50,7 @@ const inicializarMesas = (): Mesa[] => {
     return {
       id: index + 1,
       nome: nome,
-      status: 'Livre',
+      status: 'livre',
       pedido: 0,
       itens: [],
       slug: gerarSlugMesa(`mesa-${nome}`),
@@ -194,6 +194,24 @@ export const getAllMesas = (): Mesa[] => {
   if (mesas.length === 0) {
     return inicializarMesas();
   }
+  // Normalizar status antigo (por exemplo 'Livre'/'Ocupada') para o padrão lowercase 'livre'/'ocupada'
+  let changed = false;
+  const normalized = mesas.map(m => {
+    const s = String(m.status ?? '').trim();
+    const lower = s.toLowerCase();
+    if (lower === 'livre' || lower === 'ocupada' || lower === 'preparando' || lower === 'pronto' || lower === 'finalizado') {
+      if (m.status !== lower) {
+        changed = true;
+        return { ...m, status: lower } as Mesa;
+      }
+      return m;
+    }
+    // Fallback: manter o valor atual
+    return m;
+  });
+  if (changed) localStorage.setItem(STORAGE_KEYS.MESAS, JSON.stringify(normalized));
+  // usar a versão normalizada ao retornar
+  if (changed) return normalized;
   migrarMesasSemSlug();
   return mesas;
 };
@@ -260,7 +278,7 @@ export const adicionarItemMesa = (mesaId: number, item: ItemMesa, usuarioId?: nu
       mesasAtuais[index].itens = [];
     }
     
-    if (mesasAtuais[index].status === 'Livre' || mesasAtuais[index].pedido === 0) {
+  if (mesasAtuais[index].status === 'livre' || mesasAtuais[index].pedido === 0) {
       // Se o chamador forneceu um número (p.ex. vindo do servidor), usá-lo.
   const pedidoRaw = numeroPedido ?? getNextPedidoNumber();
   let pedidoNum = typeof pedidoRaw === 'string' ? parseInt(pedidoRaw, 10) : (pedidoRaw as number);
@@ -270,7 +288,7 @@ export const adicionarItemMesa = (mesaId: number, item: ItemMesa, usuarioId?: nu
     }
     
     mesasAtuais[index].itens?.push(item);
-    mesasAtuais[index].status = 'Ocupada';
+  mesasAtuais[index].status = 'ocupada';
     localStorage.setItem(STORAGE_KEYS.MESAS, JSON.stringify(mesasAtuais));
     
     console.log(`✅ Item adicionado à mesa ${mesaId} com reserva de estoque`);
@@ -290,8 +308,8 @@ export const removerItemMesa = (mesaId: number, itemId: number): void => {
     
     mesasAtuais[index].itens = mesasAtuais[index].itens?.filter(item => item.id !== itemId);
     
-    if (mesasAtuais[index].itens.length === 0) {
-      mesasAtuais[index].status = 'Livre';
+      if (mesasAtuais[index].itens.length === 0) {
+      mesasAtuais[index].status = 'livre';
       mesasAtuais[index].pedido = 0;
       mesasAtuais[index].usuarioId = undefined; // Remove vínculo do usuário
       mesasAtuais[index].statusPedido = undefined;
@@ -313,8 +331,8 @@ export const cancelarPedido = (mesaId: number): void => {
     cancelarPedidoLocal(mesaId);
     
     // Limpa mesa
-    mesasAtuais[index].itens = [];
-    mesasAtuais[index].status = 'Livre';
+  mesasAtuais[index].itens = [];
+  mesasAtuais[index].status = 'livre';
     mesasAtuais[index].pedido = 0;
     mesasAtuais[index].usuarioId = undefined;
     mesasAtuais[index].statusPedido = undefined;
@@ -357,7 +375,7 @@ export const backfillPedidosFromItens = (): boolean => {
     const m = mesas[i];
     const temItens = Array.isArray(m.itens) && m.itens.length > 0;
     if (temItens && (!m.pedido || m.pedido === 0)) {
-      mesas[i] = { ...m, pedido: getNextPedidoNumber(), status: 'Ocupada' };
+  mesas[i] = { ...m, pedido: getNextPedidoNumber(), status: 'ocupada' };
       changed = true;
     }
   }

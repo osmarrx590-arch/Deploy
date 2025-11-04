@@ -1,5 +1,6 @@
+// src/hooks/useFavoritos.ts
 import { useContext } from 'react';
-import { FavoritosContext } from '@/contexts/FavoritosContext';
+import { FavoritosContext } from '@/contexts/FavoritosContext'; // Importa do novo local
 import { FavoritosContextType } from '@/types/favoritos';
 
 export function useFavoritos(): FavoritosContextType {

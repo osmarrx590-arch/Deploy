@@ -1,1 +1,3 @@
 Execute agora npm run typecheck e npm run lint no terminal cmd
+
+npm run typecheck; npm run lint

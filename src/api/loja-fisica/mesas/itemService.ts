@@ -34,22 +34,23 @@ export const adicionarItemMesa = async (mesaId: number, item: ItemMesa, usuarioI
       }
     }
 
-    const res = await fetch(`${import.meta.env.VITE_BACKEND_URL ?? 'http://localhost:8000'}/mesas/${mesaId}/itens`, {
-      method: 'POST',
-      credentials: 'include',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(bodyObj)
+    // Use o serviço centralizado que já aplica credentials/headers
+    const resBody = await apiServices.mesaService.adicionarItem(mesaId, {
+      produtoId: item.produtoId,
+      quantidade: item.quantidade,
+      nome: item.nome,
+      precoUnitario: item.precoUnitario,
+      usuarioId: usuarioId,
+      numero: bodyObj.numero as number | undefined
     });
+    // Simular objeto Response mínimo com ok=true e body em resBody para compatibilidade com fluxo abaixo
+    const res = { ok: true, json: async () => resBody } as unknown as Response;
 
   if (!res.ok) {
       // tentar restaurar o estoque se a API de adicionar item falhar
       try {
-        await fetch(`${import.meta.env.VITE_BACKEND_URL ?? 'http://localhost:8000'}/estoque/movimentacoes`, {
-          method: 'POST',
-          credentials: 'include',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ produtoId: item.produtoId, produtoNome: item.nome || '', quantidade: item.quantidade, tipo: 'entrada', origem: 'cancelamento_venda_fisica', data: new Date().toISOString().split('T')[0], observacoes: 'Rollback: falha ao adicionar item à mesa' })
-        });
+        // Usar serviço centralizado para criar movimentação de estoque (rollback)
+      await apiServices.estoqueService.addMovimentacao({ produtoId: item.produtoId, produtoNome: item.nome || '', quantidade: item.quantidade, tipo: 'entrada', origem: 'cancelamento_venda_fisica', data: new Date().toISOString().split('T')[0], observacoes: 'Rollback: falha ao adicionar item à mesa' });
       } catch (rbErr) {
         console.error('[itemService] rollback falhou ao restaurar estoque:', rbErr);
       }
@@ -97,11 +98,10 @@ export const adicionarItemMesa = async (mesaId: number, item: ItemMesa, usuarioI
 
 export const removerItemMesa = async (mesaId: number, itemId: number): Promise<void> => {
   try {
-    const res = await fetch(`${import.meta.env.VITE_BACKEND_URL ?? 'http://localhost:8000'}/mesas/${mesaId}/itens/${itemId}`, {
-      method: 'DELETE',
-      credentials: 'include'
-    });
-    if (!res.ok) {
+    try {
+      await apiServices.mesaService.removerItem(mesaId, itemId);
+      return;
+    } catch (err) {
       throw new Error('Erro ao remover item no servidor');
     }
   } catch (error) {

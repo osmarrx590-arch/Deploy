@@ -1,3 +1,32 @@
+# Backend (FastAPI) para Chope Pay Gateway
+
+Passos rápidos para rodar localmente:
+
+1. Criar e ativar um ambiente virtual (recomendado):
+# Windows (PowerShell)
+
+cd backend
+python -m venv .venv   
+.\.venv\Scripts\Activate.ps1
+cd..
+python -m uvicorn backend.main:app --reload --port 8000
+
+# Se já foi criado
+cd backend
+.\.venv\Scripts\Activate.ps1
+cd..
+python -m uvicorn backend.main:app --reload --port 8000
+
+2. Instalar dependências
+
+   pip install -r requirements.txt
+
+   ou
+
+   python.exe -m pip install fastapi "uvicorn[standard]" SQLAlchemy requests python-dotenv pydantic 
+
+
+
 # População do banco de dados (SQLite)
 
 Este repositório contém modelos SQLAlchemy e um script utilitário para popular um banco SQLite de exemplo (`bancodados.db`).

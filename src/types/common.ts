@@ -17,7 +17,7 @@ export interface NotaFiscalData {
 
 export interface MesaFormData {
   nome: string;
-  status: 'Ocupada' | 'Livre';
+  status: 'ocupada' | 'livre';
   pedido: number | string;
 }
 

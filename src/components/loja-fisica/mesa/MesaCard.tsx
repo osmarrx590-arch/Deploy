@@ -19,7 +19,7 @@ const MesaCard = ({ mesa, mesaPedido, itensMesa, onOpen, onDelete, isOpen }: Mes
   
   // Cores baseadas no status e permissões
   const getCardStyle = () => {
-    if (mesa.status === 'Livre') {
+    if (mesa.status === 'livre') {
       return 'bg-green-600 hover:bg-green-700 border-green-500';
     }
     return 'bg-gray-600 hover:bg-gray-700 border-gray-500';
@@ -50,7 +50,7 @@ const MesaCard = ({ mesa, mesaPedido, itensMesa, onOpen, onDelete, isOpen }: Mes
     <Card className={`${getCardStyle()} text-white relative min-h-[200px] p-4 flex flex-col border-2 transition-all duration-200`}>
       {/* Status Badge */}
       <div className="absolute top-2 right-2">
-        {mesa.status === 'Livre' ? (
+        {mesa.status === 'livre' ? (
           <Badge variant="secondary" className="bg-green-100 text-green-800">Livre</Badge>
         ) : (
           <Badge variant="secondary" className="bg-white text-gray-800">Pedido #{renderPedidoValue(mesaPedido ?? mesa.pedido)}</Badge>
@@ -82,7 +82,7 @@ const MesaCard = ({ mesa, mesaPedido, itensMesa, onOpen, onDelete, isOpen }: Mes
         )}
 
         {/* Tempo de ocupação */}
-        {mesa.status === 'Ocupada' && (
+        {mesa.status === 'ocupada' && (
           <div className="flex items-center gap-1 text-xs opacity-75 mt-1">
             <Clock className="h-3 w-3" />
             <span>Ativo</span>

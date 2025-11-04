@@ -268,8 +268,8 @@ const MesaDetalhes = () => {
         }
 
         // Notificar se a mesa estava livre e agora foi ocupada
-        if (mesa.status === 'Livre') {
-          notifyMesaChange('occupied', { ...mesa, status: 'Ocupada', usuarioId: parseInt(profile?.user_id || '0') });
+        if (mesa.status === 'livre') {
+          notifyMesaChange('occupied', { ...mesa, status: 'ocupada', usuarioId: parseInt(profile?.user_id || '0') });
         }
         
         toast({
@@ -311,7 +311,7 @@ const MesaDetalhes = () => {
       // Executa cancelamento local (limpa itens, libera estoque, atualiza status)
       mesaServiceLocal.cancelarPedido(mesa.id);
       // Notificar mudança — usuário pode ser undefined em modos offline/dev
-      notifyMesaChange('freed', { ...mesa, status: 'Livre', usuarioId: undefined });
+  notifyMesaChange('freed', { ...mesa, status: 'livre', usuarioId: undefined });
       // Forçar recarregamento da mesa
       refetchMesa();
       console.log('[MesaDetalhes] pedido cancelado localmente', { mesaId: mesa.id });
@@ -323,7 +323,7 @@ const MesaDetalhes = () => {
 
   const handlePagamentoRealizado = () => {
     if (mesa && user) {
-      notifyMesaChange('freed', { ...mesa, status: 'Livre', usuarioId: undefined });
+      notifyMesaChange('freed', { ...mesa, status: 'livre', usuarioId: undefined });
     }
     refetchMesa();
     toast({

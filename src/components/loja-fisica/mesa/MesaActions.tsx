@@ -3,15 +3,15 @@ import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, DialogDescription } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Card } from "@/components/ui/card";
-import { Trash2 } from "lucide-react";
+import { Trash2, Plus, User } from "lucide-react";
 import * as localMesaService from '@/services/mesaService';
 import * as apiMesaService from '@/api/loja-fisica/mesas/mesaService';
 import { useEffect, useState } from 'react';
 import type { Mesa } from '@/types/mesa';
-import { useToast } from "@/components/ui/use-toast";
+import { useToast } from "@/hooks/use-toast";
 import { useQueryClient } from '@tanstack/react-query';
-
 import { MesaActionsProps } from '@/types/mesa';
+import MesaCard from './MesaCard2';
 
 const MesaActions = ({
   isNovaMesaDialogOpen,
@@ -38,18 +38,16 @@ const MesaActions = ({
         const data = await apiMesaService.getAllMesas();
         if (mounted) setMesas(data || []);
       } catch (e) {
-        // fallback local sync
         try { const data = localMesaService.getAllMesas(); if (mounted) setMesas(data || []); } catch (err) { console.debug(err); }
       }
     };
     load();
     
-    // Listen to BroadcastChannel events to refresh when other tabs change mesas
     let bc: BroadcastChannel | null = null;
     try {
       if (typeof window !== 'undefined' && 'BroadcastChannel' in window) {
         bc = new BroadcastChannel('mesa_events');
-        bc.onmessage = async (ev: MessageEvent) => {
+        bc.onmessage = async () => {
           try {
             const data = await apiMesaService.getAllMesas();
             if (mounted) setMesas(data || []);
@@ -70,27 +68,20 @@ const MesaActions = ({
     
     const raw = mesaParaExcluir || '';
     const value = raw.trim();
-    // Tenta várias estratégias de busca para ser tolerante ao input do usuário
     let mesa = mesas.find(m => m.nome === value);
     if (!mesa) {
-      // tentar padding (ex: '1' -> '01')
       const padded = value.replace(/^0+/, '').padStart(2, '0');
       mesa = mesas.find(m => m.nome === padded);
     }
     if (!mesa && /^\d+$/.test(value)) {
-      // comparar numericamente (aceita '11' mesmo que armazenado como '11' ou '011')
       mesa = mesas.find(m => Number(m.nome) === Number(value));
     }
     if (!mesa) {
-      // comparação case-insensitive para nomes tipo 'Mesa A'
       const lower = value.toLowerCase();
       mesa = mesas.find(m => String(m.nome).toLowerCase() === lower);
     }
-    console.log('Mesa encontrada para exclusão:', mesa);
+    
     if (!mesa) {
-      // Log detalhado para debug
-      console.log('Valor pesquisado:', value, 'Mesas existentes:', mesas.map(m => m.nome));
-
       const available = mesas.map(m => m.nome).slice(0, 10).join(', ');
       toast({
         variant: "destructive",
@@ -102,7 +93,6 @@ const MesaActions = ({
 
     try {
       await apiMesaService.deleteMesa(mesa.id);
-      // atualizar lista local
       const data = await apiMesaService.getAllMesas();
       setMesas(data || []);
       queryClient.invalidateQueries({ queryKey: ['mesas'] });
@@ -124,32 +114,28 @@ const MesaActions = ({
   };
 
   return (
-    <div className="flex gap-4 mb-8">
+    <div className="flex flex-wrap gap-3 mb-8">
       <Dialog open={isNovaMesaDialogOpen} onOpenChange={setIsNovaMesaDialogOpen}>
         <DialogTrigger asChild>
-          <Button variant="default" className="bg-green-600 hover:bg-green-700">
+          <Button variant="default" size="lg" className="bg-primary hover:bg-primary-hover shadow-card">
+            <Plus className="h-5 w-5 mr-2" />
             Cadastrar Nova Mesa
           </Button>
         </DialogTrigger>
-        <DialogContent className="max-w-4xl">
-          <DialogHeader>
-            <DialogTitle>Nova Mesa</DialogTitle>
-            <DialogDescription>
-              Selecione um número para criar uma nova mesa.
+        <DialogContent className="max-w-5xl max-h-[85vh] overflow-y-auto">
+          <DialogHeader className="space-y-3 pb-4">
+            <DialogTitle className="text-2xl font-bold">Nova Mesa</DialogTitle>
+            <DialogDescription className="text-base">
+              Selecione um número para criar uma nova mesa
             </DialogDescription>
           </DialogHeader>
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-4 p-4">
+          <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-4 p-2">
             {mesasDisponiveis.map((numero) => (
-              <Card key={numero} className="bg-green-100 hover:bg-green-200 cursor-pointer transition-colors">
-                <div className="text-center mb-2">
-                  <Button onClick={() => handleCreateMesa(numero)}>
-                    Escolher
-                  </Button>
-                </div>
-                <div className="flex-1 flex items-center justify-center">
-                  <h5 className="text-xl font-bold text-center">{numero}</h5>
-                </div>
-              </Card>
+              <MesaCard 
+                key={numero} 
+                numero={numero} 
+                onSelect={handleCreateMesa}
+              />
             ))}
           </div>
         </DialogContent>
@@ -157,21 +143,22 @@ const MesaActions = ({
 
       <Dialog open={isBalcaoDialogOpen} onOpenChange={setIsBalcaoDialogOpen}>
         <DialogTrigger asChild>
-          <Button variant="default" className="bg-blue-600 hover:bg-blue-700">
-            Pedido no balcão
+          <Button variant="secondary" size="lg" className="shadow-card">
+            <User className="h-5 w-5 mr-2" />
+            Pedido no Balcão
           </Button>
         </DialogTrigger>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>Cadastrar Mesa com Nome de Pessoa</DialogTitle>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader className="space-y-3">
+            <DialogTitle className="text-xl font-bold">Pedido no Balcão</DialogTitle>
             <DialogDescription>
-              Digite o nome da pessoa para criar um pedido no balcão.
+              Digite o nome da pessoa para criar um pedido no balcão
             </DialogDescription>
           </DialogHeader>
-          <form onSubmit={handleCreateMesaBalcao} className="space-y-4">
-            <div>
+          <form onSubmit={handleCreateMesaBalcao} className="space-y-6 pt-4">
+            <div className="space-y-2">
               <label htmlFor="nomeBalcao" className="text-sm font-medium">
-                Nome da Mesa (Pessoa)
+                Nome da Pessoa
               </label>
               <Input
                 id="nomeBalcao"
@@ -179,29 +166,32 @@ const MesaActions = ({
                 onChange={(e) => setNomeBalcao(e.target.value)}
                 placeholder="Digite o nome da pessoa"
                 required
+                className="h-11"
               />
             </div>
-            <Button type="submit">Cadastrar</Button>
+            <Button type="submit" size="lg" className="w-full">
+              Cadastrar Pedido
+            </Button>
           </form>
         </DialogContent>
       </Dialog>
 
       <Dialog open={isDeleteDialogOpen} onOpenChange={setIsDeleteDialogOpen}>
         <DialogTrigger asChild>
-          <Button variant="destructive" className="ml-auto">
-            <Trash2 className="h-4 w-4 mr-2" />
+          <Button variant="destructive" size="lg" className="ml-auto shadow-card">
+            <Trash2 className="h-5 w-5 mr-2" />
             Excluir Mesa
           </Button>
         </DialogTrigger>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>Excluir Mesa</DialogTitle>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader className="space-y-3">
+            <DialogTitle className="text-xl font-bold">Excluir Mesa</DialogTitle>
             <DialogDescription>
-              Digite o nome da mesa que deseja excluir ou selecione uma das opções.
+              Digite o nome da mesa que deseja excluir ou selecione uma das opções
             </DialogDescription>
           </DialogHeader>
-          <form onSubmit={handleDeleteMesa} className="space-y-4">
-            <div>
+          <form onSubmit={handleDeleteMesa} className="space-y-6 pt-4">
+            <div className="space-y-2">
               <label htmlFor="mesaParaExcluir" className="text-sm font-medium">
                 Nome da Mesa
               </label>
@@ -210,8 +200,9 @@ const MesaActions = ({
                 list="mesas-list"
                 value={mesaParaExcluir}
                 onChange={(e) => setMesaParaExcluir(e.target.value)}
-                placeholder="Digite o nome da mesa (ou selecione)"
+                placeholder="Digite o nome da mesa"
                 required
+                className="h-11"
               />
               <datalist id="mesas-list">
                 {mesas.map((m) => (
@@ -219,21 +210,33 @@ const MesaActions = ({
                 ))}
               </datalist>
             </div>
-            <div className="flex gap-2">
-              <Button type="submit" variant="destructive">Excluir</Button>
-              <Button type="button" variant="ghost" onClick={() => setMesaParaExcluir(mesas[0]?.nome || '')}>Preencher com primeira</Button>
-              <Button type="button" onClick={async () => {
+            <div className="flex gap-2 flex-wrap">
+              <Button type="submit" variant="destructive" className="flex-1">
+                Excluir
+              </Button>
+              <Button 
+                type="button" 
+                variant="outline" 
+                onClick={() => setMesaParaExcluir(mesas[0]?.nome || '')}
+                className="flex-1"
+              >
+                Primeira Mesa
+              </Button>
+            </div>
+            <Button 
+              type="button" 
+              variant="secondary"
+              className="w-full"
+              onClick={async () => {
                 const nome = (mesaParaExcluir || '').trim();
                 if (!nome) return;
                 const exists = mesas.some(m => m.nome === nome);
                 if (exists) {
-                  // já existe
                   try { toast({ title: 'Aviso', description: `A mesa ${nome} já existe.` }); } catch (e) { console.debug(e); }
                   return;
                 }
                 try {
-                  // criar via API e atualizar state
-                  const nova = await apiMesaService.salvarMesa({ nome, status: 'Livre', pedido: 0, itens: [] } as Omit<Mesa, 'id'>);
+                  const nova = await apiMesaService.salvarMesa({ nome, status: 'livre', pedido: 0, itens: [] } as Omit<Mesa, 'id'>);
                   const data = await apiMesaService.getAllMesas();
                   setMesas(data || []);
                   queryClient.invalidateQueries({ queryKey: ['mesas'] });
@@ -242,8 +245,10 @@ const MesaActions = ({
                 } catch (e) {
                   try { toast({ variant: 'destructive', title: 'Erro', description: 'Não foi possível criar a mesa.' }); } catch (err) { console.debug(err); }
                 }
-              }}>Criar mesa</Button>
-            </div>
+              }}
+            >
+              Criar Nova Mesa
+            </Button>
           </form>
         </DialogContent>
       </Dialog>

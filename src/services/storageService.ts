@@ -137,7 +137,26 @@ export const produtoStorage = {
     }
     return produtos;
   },
-  save: (produtos: Produto[]): void => SafeStorage.set(STORAGE_KEYS.PRODUTOS, produtos),
+  save: (produtos: Produto[]): void => {
+    // Normaliza os produtos antes de salvar para garantir que o campo `estoque`
+    // sempre exista e seja um número. Alguns backends podem não enviar o campo
+    // ou usá-lo com nomes diferentes (quantidade, qtd, etc.). Aqui fazemos
+    // uma coerção segura e persistimos a lista normalizada.
+    try {
+      const normalized = produtos.map(prod => {
+        const rec = prod as unknown as Record<string, unknown>;
+        const maybeEstoque = rec['estoque'] ?? rec['quantidade'] ?? rec['qtd'] ?? 0;
+        return {
+          ...prod,
+          estoque: Number(String(maybeEstoque ?? 0))
+        };
+      });
+      SafeStorage.set(STORAGE_KEYS.PRODUTOS, normalized);
+    } catch (e) {
+      // Fallback robusto: tenta salvar o array original caso normalization falhe
+      SafeStorage.set(STORAGE_KEYS.PRODUTOS, produtos);
+    }
+  },
   add: (produto: Produto): void => {
     const produtos = produtoStorage.getAll();
     produtos.push(produto);

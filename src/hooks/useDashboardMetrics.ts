@@ -38,7 +38,7 @@ export const useDashboardMetrics = (): Metrics => {
         // Mesas: usar storage local (disponível via localMesaService)
         try {
           const mesas = localMesaService.getAllMesas();
-          const ocupadas = mesas.filter(m => (m.status && m.status !== 'Livre') || (Array.isArray(m.itens) && m.itens.length > 0) || (m.pedido && m.pedido > 0));
+          const ocupadas = mesas.filter(m => (m.status && m.status !== 'livre') || (Array.isArray(m.itens) && m.itens.length > 0) || (m.pedido && m.pedido > 0));
           if (mounted) setMesasAtivas(ocupadas.length);
         } catch (e) {
           // Em caso de erro, assume 0

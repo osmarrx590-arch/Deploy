@@ -2,22 +2,22 @@
 import { createContext, useContext, useState, useEffect, ReactNode } from 'react';
 import { useToast } from '@/hooks/use-toast';
 import { authStorage } from '@/services/storageService';
+import { userService } from '@/services/api';
 
-// BACKEND URL used by auth hooks; keep at module scope so it doesn't change between renders
-const BACKEND = import.meta.env.VITE_BACKEND_URL ?? 'http://localhost:8000';
+// NOTE: backend URL/config is provided via services (userService). Do not read .env/secrets directly here.
 
 export interface BackendUser {
-  id: string;
+  id: number;
+  username: string;
   email: string;
-  nome?: string;
-  tipo?: 'fisica' | 'online' | 'admin';
+  nome: string;
+  tipo: 'fisica' | 'online' | 'admin';
   created_at?: string;
   updated_at?: string;
-  [key: string]: unknown;
 }
 
 export interface BackendSession {
-  accessToken?: string;
+  token: string;
   token_type?: string;
   expires_at?: string | number;
   [key: string]: unknown;
@@ -100,40 +100,31 @@ const AuthProviderComponent = ({ children }: AuthProviderProps) => {
     const init = async () => {
       setIsLoading(true);
       try {
-        const res = await fetch(`${BACKEND}/auth/me`, { credentials: 'include' });
-        if (res.ok) {
-          const data = await res.json();
-          const backendUser: BackendUser = {
-            id: String(data.id),
-            email: data.email,
-            nome: data.nome,
-            tipo: data.tipo,
-            created_at: data.created_at,
-            updated_at: data.updated_at,
-            ...data,
-          };
-          setUser(backendUser);
-          setProfile({
-            id: String(data.id),
-            user_id: String(data.id),
-            nome: data.nome,
-            email: data.email,
-            tipo: (data.tipo || 'online') as Profile['tipo'],
-          });
-          setSession((data.session ?? null) as BackendSession | null);
-          // Persistir usuário no storage local para sinalizar sessão ativa entre abas
-          try { authStorage.setUser({ id: Number(data.id), nome: data.nome, email: data.email, type: data.tipo, tipo: data.tipo, createdAt: data.created_at ? new Date(data.created_at) : new Date() }); } catch (e) { console.debug(e); }
-        } else {
-          // Se backend não considerar o usuário autenticado, limpar também o localStorage
-          authStorage.removeUser();
-          setUser(null);
-          setProfile(null);
-          setSession(null);
-        }
+        const me = await userService.me();
+        const data = me as unknown as BackendUser & { session?: BackendSession };
+        const backendUser: BackendUser = {
+          id: Number((data as Partial<BackendUser>)?.id ?? 0),
+          email: data.email,
+          nome: data.nome,
+          tipo: data.tipo,
+          created_at: data.created_at,
+          updated_at: data.updated_at,
+          ...data,
+        };
+        setUser(backendUser);
+        setProfile({
+          id: String(data.id),
+          user_id: String(data.id),
+          nome: data.nome,
+          email: data.email,
+          tipo: (data.tipo || 'online') as Profile['tipo'],
+        });
+        setSession((data.session ?? null) as BackendSession | null);
+  try { authStorage.setUser({ id: Number((data as Partial<BackendUser>)?.id ?? 0), nome: data.nome, email: data.email, type: (data.tipo === 'fisica' || data.tipo === 'online') ? data.tipo : 'online', tipo: data.tipo, createdAt: data.created_at ? new Date(data.created_at) : new Date() }); } catch (e) { console.debug(e); }
       } catch (err) {
         const e = err as unknown;
         console.error('Error initializing auth from backend:', e);
-        // Em caso de erro (ex: backend reiniciado), limpar o usuário local para evitar sessão fantasma
+        // Em caso de erro (ex: backend reiniciado) ou se usuário não autenticado, limpar o usuário local
         try { authStorage.removeUser(); } catch (e) { console.debug(e); }
         setUser(null);
         setProfile(null);
@@ -147,39 +138,30 @@ const AuthProviderComponent = ({ children }: AuthProviderProps) => {
 
   const fetchProfile = async (): Promise<Profile | null> => {
     try {
-      const res = await fetch(`${BACKEND}/auth/me`, { credentials: 'include' });
-      if (!res.ok) {
-        // limpar storage de auth para sinalizar logout
-        try { authStorage.removeUser(); } catch (e) { console.debug(e); }
-        setProfile(null);
-        setUser(null);
-        setSession(null);
-        return null;
-      }
-      const data = await res.json();
+      const data = await userService.me();
+      const d = data as unknown as BackendUser & { session?: BackendSession };
       const backendUser: BackendUser = {
-        id: String(data.id),
-        email: data.email,
-        nome: data.nome,
-        tipo: data.tipo,
-        created_at: data.created_at,
-        updated_at: data.updated_at,
-        ...data,
+        id: Number((d as Partial<BackendUser>)?.id ?? 0),
+        email: d.email,
+        nome: d.nome,
+        tipo: d.tipo,
+        created_at: d.created_at,
+        updated_at: d.updated_at,
+        ...d,
       };
       const p: Profile = {
-        id: String(data.id),
-        user_id: String(data.id),
-        nome: data.nome,
-        email: data.email,
-        tipo: (data.tipo || 'online') as Profile['tipo'],
-        created_at: data.created_at,
-        updated_at: data.updated_at,
+        id: String(d.id),
+        user_id: String(d.id),
+        nome: d.nome,
+        email: d.email,
+        tipo: (d.tipo || 'online') as Profile['tipo'],
+        created_at: d.created_at,
+        updated_at: d.updated_at,
       };
       setProfile(p);
       setUser(backendUser);
-      setSession((data.session ?? null) as BackendSession | null);
-      // Persistir usuário no storage local para sinalizar sessão ativa entre abas
-      try { authStorage.setUser({ id: Number(data.id), nome: data.nome, email: data.email, type: data.tipo, tipo: data.tipo, createdAt: data.created_at ? new Date(data.created_at) : new Date() }); } catch (e) { console.debug(e); }
+  setSession((d.session ?? null) as BackendSession | null);
+  try { authStorage.setUser({ id: Number((d as Partial<BackendUser>)?.id ?? 0), nome: d.nome, email: d.email, type: (d.tipo === 'fisica' || d.tipo === 'online') ? d.tipo : 'online', tipo: d.tipo, createdAt: d.created_at ? new Date(d.created_at) : new Date() }); } catch (e) { console.debug(e); }
       return p;
     } catch (error) {
       const e = error as unknown;
@@ -194,16 +176,8 @@ const AuthProviderComponent = ({ children }: AuthProviderProps) => {
 
   async function signIn(email: string, password: string): Promise<AuthResult> {
     try {
-      const res = await fetchWithTimeout(`${BACKEND}/auth/login`, {
-        method: 'POST',
-        credentials: 'include',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email, password }),
-      }, 15000);
-      if (!res.ok) {
-        const err = await res.json().catch(() => ({ detail: res.statusText }));
-        return { error: err.detail ?? 'Erro ao logar' };
-      }
+      // usa userService para login (centralizado)
+      await userService.login(email, password);
       // Atualiza estado chamando /auth/me (cookie httpOnly)
       await fetchProfile();
       toast({ title: 'Login realizado', description: 'Bem-vindo!' });
@@ -217,16 +191,8 @@ const AuthProviderComponent = ({ children }: AuthProviderProps) => {
 
   async function signUp(email: string, password: string, nome: string, tipo: 'fisica' | 'online' = 'online'): Promise<AuthResult> {
     try {
-      const res = await fetchWithTimeout(`${BACKEND}/auth/register`, {
-        method: 'POST',
-        credentials: 'include',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ nome, email, password, tipo }),
-      }, 15000);
-      if (!res.ok) {
-        const err = await res.json().catch(() => ({ detail: res.statusText }));
-        return { error: err.detail ?? 'Erro ao registrar' };
-      }
+      // usa userService para registrar
+  await userService.register({ email, password, nome, tipo });
       // após registro o backend faz auto-login via cookie; buscar /auth/me para popular o estado
       try {
         await fetchProfile();
@@ -244,13 +210,7 @@ const AuthProviderComponent = ({ children }: AuthProviderProps) => {
 
   const signOut = async () => {
     try {
-      const res = await fetch(`${BACKEND}/auth/logout`, { method: 'POST', credentials: 'include' });
-      if (!res.ok) {
-        const err = await res.json().catch(() => ({ detail: res.statusText }));
-        const msg = err.detail ?? 'Erro no logout';
-        toast({ variant: 'destructive', title: 'Erro no logout', description: msg });
-        return { error: msg };
-      }
+      await userService.logout();
       setUser(null);
       setProfile(null);
       setSession(null);

@@ -31,11 +31,62 @@ export const getMesaById = async (id: number): Promise<Mesa | null> => {
 
 export const getMesaBySlug = async (slug: string): Promise<Mesa | null> => {
   try {
+    // Helper para normalizar qualquer objeto de mesa vindo do backend/local
+    const normalizeMesaObj = (mesaObj: Record<string, unknown>): Mesa => {
+      const usuarioIdVal = (mesaObj['usuario_responsavel_id'] ?? mesaObj['usuarioId']) as number | undefined;
+      const pedidoRaw = mesaObj['pedido'];
+      let pedidoVal: number | string = 0;
+      if (typeof pedidoRaw === 'number') {
+        pedidoVal = pedidoRaw as number;
+      } else if (typeof pedidoRaw === 'string' && pedidoRaw.trim().length > 0) {
+        pedidoVal = pedidoRaw;
+      }
+
+      const itensRaw = (mesaObj['itens'] ?? mesaObj['items']) as unknown[] | undefined;
+      const itensNorm = Array.isArray(itensRaw) ? itensRaw.map(it => {
+        const item = it as Record<string, unknown>;
+        const id = Number(item['id'] ?? Date.now());
+        const nome = String(item['nome'] ?? item['nome_produto'] ?? '');
+        const quantidade = Number(item['quantidade'] ?? item['qtd'] ?? 0);
+        const produtoId = Number(item['produtoId'] ?? item['produto_id'] ?? item['produto'] ?? 0);
+        const venda = Number(item['venda'] ?? item['precoUnitario'] ?? item['preco_unitario'] ?? 0);
+        let total = Number(item['total'] ?? (quantidade * venda));
+        if (!Number.isFinite(total)) total = 0;
+        const mesaId = Number(item['mesaId'] ?? item['mesa_id'] ?? mesaObj['id'] ?? 0);
+        const precoUnitario = Number(item['precoUnitario'] ?? item['preco_unitario'] ?? venda ?? 0);
+        const status = String(item['status'] ?? 'ativo');
+        return {
+          id,
+          nome,
+          quantidade,
+          venda,
+          total,
+          produtoId,
+          mesaId,
+          precoUnitario,
+          status
+        };
+      }) : [];
+
+      return {
+        id: Number(mesaObj['id'] ?? 0),
+        nome: String(mesaObj['nome'] ?? ''),
+        status: String(mesaObj['status'] ?? 'livre'),
+        pedido: pedidoVal,
+        itens: itensNorm,
+        slug: String(mesaObj['slug'] ?? ''),
+        usuarioId: usuarioIdVal,
+        statusPedido: mesaObj['statusPedido'] ?? mesaObj['status_pedido'] ?? undefined,
+      } as unknown as Mesa;
+    };
+
     // Tentar endpoint dedicado por slug primeiro
     try {
       const mesaDirect = await mesaService.getBySlug(slug);
       console.log('[mesaService.getMesaBySlug] getBySlug direct result:', { slug, mesaDirect });
-      if (mesaDirect) return mesaDirect;
+      if (mesaDirect) {
+        return normalizeMesaObj(mesaDirect as unknown as Record<string, unknown>);
+      }
     } catch (err) {
       console.error('[mesaService.getMesaBySlug] erro ao chamar getBySlug:', err);
     }
@@ -66,14 +117,14 @@ export const getMesaBySlug = async (slug: string): Promise<Mesa | null> => {
     let found = mesas.find((mesa: Mesa) => normalize(mesa.slug) === slugNorm);
     if (found) {
       console.log('[mesaService.getMesaBySlug] found by slug (normalize):', { id: found.id, slug: found.slug, nome: found.nome });
-      return found;
+      return normalizeMesaObj(found as unknown as Record<string, unknown>);
     }
 
     // Tenta encontrar por nome (case-insensitive)
     found = mesas.find((mesa: Mesa) => normalize(String(mesa.nome)) === slugNorm);
     if (found) {
       console.log('[mesaService.getMesaBySlug] found by nome (normalize):', { id: found.id, slug: found.slug, nome: found.nome });
-      return found;
+      return normalizeMesaObj(found as unknown as Record<string, unknown>);
     }
 
     // Gera um slug simples localmente e compara (caso backend use formato diferente como 'Mesa-04')
@@ -99,11 +150,11 @@ export const getMesaBySlug = async (slug: string): Promise<Mesa | null> => {
     found = mesas.find((mesa: Mesa) => normalize(gerarSlugLocal(String(mesa.slug || mesa.nome))) === slugNorm || normalize(mesa.slug) === slugNorm || normalize(String(mesa.nome)) === slugNorm);
     if (found) {
       console.log('[mesaService.getMesaBySlug] found by gerarSlugLocal/other:', { id: found.id, slug: found.slug, nome: found.nome });
+      return normalizeMesaObj(found as unknown as Record<string, unknown>);
     } else {
       console.log('[mesaService.getMesaBySlug] not found for slug:', slug);
+      return null;
     }
-
-    return found || null;
   } catch (error) {
     console.error('Erro ao buscar mesa por slug:', error);
     throw error;

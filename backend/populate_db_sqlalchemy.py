@@ -18,12 +18,24 @@ $env:PYTHONPATH = (Get-Location).Path
 python .\backend\populate_db_sqlalchemy.py
 """
 # populate_db_sqlalchemy.py
-
+import os
+import sys
+import pathlib
 from decimal import Decimal
 from datetime import date, datetime, timedelta, timezone
-from backend.core_models import Session, Base, db, Categoria, Empresa, Produto, NotaFiscal
-from backend.fisica_models import Mesa, MovimentacaoEstoque
-from backend.user_models import User, UserType
+
+# Quando este script é executado diretamente (python populate_db_sqlalchemy.py)
+# o import "backend.*" pode falhar porque a raiz do projeto pode não estar em
+# sys.path. Adicionamos automaticamente a raiz do repositório ao sys.path para
+# permitir execução direta sem precisar configurar PYTHONPATH manualmente.
+if __package__ is None:
+    project_root = pathlib.Path(__file__).resolve().parents[1]
+    project_root_str = str(project_root)
+    if project_root_str not in sys.path:
+        sys.path.insert(0, project_root_str)
+
+from backend.database import SessionLocal as Session, Base, engine as db
+from backend.models import Categoria, Empresa, Produto, Mesa, MovimentacaoEstoque, User, UserType
 from backend.logging_config import logger
 
 DEFAULT_CATEGORIES = [
@@ -459,17 +471,24 @@ def create_empresas(session):
             session.commit()
             nf = ed.get('nota_fiscal')
             if nf:
-                nf_obj = NotaFiscal(empresa_id=emp.id, serie=nf['serie'], numero=nf['numero'], descricao=nf['descricao'], data=date.fromisoformat(nf['data']))
-                session.add(nf_obj)
-                session.commit()
-                logger.info(f"Empresa e nota fiscal criadas: {emp.nome}")
+                # NotaFiscal pode não existir no modelo atual; tenta importar dinamicamente
+                try:
+                    from backend.models import NotaFiscal
+                except Exception:
+                    logger.warning('Modelo NotaFiscal não encontrado; pulando criação de nota fiscal para %s', emp.nome)
+                else:
+                    nf_obj = NotaFiscal(empresa_id=emp.id, serie=nf['serie'], numero=nf['numero'], descricao=nf['descricao'], data=date.fromisoformat(nf['data']))
+                    session.add(nf_obj)
+                    session.commit()
+                    logger.info(f"Empresa e nota fiscal criadas: {emp.nome}")
         else:
             logger.info(f"Empresa já existe: {emp.nome}")
 
 def create_user_admin(session):
     user = session.query(User).filter_by(username='admin').first()
     if not user:
-        user = User(username='admin', email='admin@example.com', nome='Administrador', password='admin123', tipo=UserType.admin)
+        user = User(username='admin', email='admin@example.com', nome='Administrador', tipo=UserType.admin)
+        user.set_password('admin123')  # Usa set_password para fazer hash correto
         user.is_superuser = True
         session.add(user)
         session.commit()
@@ -490,12 +509,12 @@ def create_produtos(session, usuario_id):
         slug = f"{pd['nome'].lower().replace(' ', '-')[:200]}"
         prod = session.query(Produto).filter_by(codigo=pd['codigo']).first()
         if not prod:
-            prod = Produto(nome=pd['nome'], categoria_id=cat.id, empresa_id=emp.id, descricao=pd['descricao'], custo=pd['custo'], venda=pd['venda'], codigo=pd['codigo'], estoque=pd['estoque'], disponivel=pd['disponivel'], imagem=pd['imagem'], slug=slug)
+            prod = Produto(nome=pd['nome'], categoria_id=cat.id, empresa_id=emp.id, descricao=pd['descricao'], preco_compra=pd['custo'], preco_venda=pd['venda'], codigo=pd['codigo'], estoque=pd['estoque'], disponivel=pd['disponivel'], imagem=pd['imagem'], slug=slug)
             session.add(prod)
             session.commit()
             logger.info(f"Produto criado: {prod.nome}")
             # criar movimentacao de entrada
-            mov = MovimentacaoEstoque(produto_id=prod.id, tipo='entrada', origem='compra', quantidade=prod.estoque, quantidade_anterior=0, quantidade_nova=prod.estoque, usuario_id=usuario_id if usuario_id else 1, observacao='Entrada inicial')
+            mov = MovimentacaoEstoque(produto_id=prod.id, tipo='entrada', origem='compra', quantidade=prod.estoque, quantidade_anterior=0, quantidade_nova=prod.estoque, usuario_id=usuario_id if usuario_id else 1, observacoes='Entrada inicial')
             session.add(mov)
             session.commit()
             logger.info('Movimentacao de estoque criada')
@@ -540,7 +559,8 @@ def create_users_custom(session):
             created_ids.append(exists.id)
             continue
         try:
-            new_user = User(username=u['username'], email=u['email'], nome=u['nome'], password=u['password'], tipo=u['tipo'])
+            new_user = User(username=u['username'], email=u['email'], nome=u['nome'], tipo=u['tipo'])
+            new_user.set_password(u['password'])  # Usa set_password para fazer hash correto
             # se for admin (nenhum aqui) poderia setar is_superuser
             session.add(new_user)
             session.commit()
@@ -573,7 +593,7 @@ def main():
             logger.info('Banco já contém dados; pulando populate. Totais: %s', totais)
             # Ainda realiza o backfill de slug se necessário
             try:
-                from backend.fisica_models import gerar_slug
+                from backend.models import gerar_slug
                 all_mesas = session.query(Mesa).all()
                 updated = 0
                 for m in all_mesas:
@@ -603,7 +623,7 @@ def main():
         create_mesas(session, usuario_id)
         # Backfill: garantir que todas as mesas tenham slug (usa gerar_slug do modelo)
         try:
-            from backend.fisica_models import gerar_slug
+            from backend.models import gerar_slug
             all_mesas = session.query(Mesa).all()
             updated = 0
             for m in all_mesas:

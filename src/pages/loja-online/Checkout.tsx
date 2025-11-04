@@ -19,6 +19,8 @@ import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { Label } from "@/components/ui/label";
 import { salvarPedidoNoHistorico } from '@/services/pedidoHistoricoService';
 import { useAuth } from '@/contexts/AuthContext';
+import apiServices from '@/services/apiServices';
+import { PedidoLocal } from '@/types/pedido';
 import { formataPreco } from '@/contexts/moeda';
 import { confirmarConsumoEstoque } from '@/services/estoqueReservaService';
 import { registrarSaida } from '@/services/movimentacaoEstoqueService';
@@ -69,16 +71,27 @@ const Checkout = () => {
         };
 
         // Chamada direta ao backend — segue mesmo padrão do pagamentoService
-        const resp = await fetch(`${import.meta.env.VITE_BACKEND_URL ?? 'http://localhost:8000'}/pedidos/`, {
-          method: 'POST',
-          credentials: 'include',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(payload)
-        });
+        // Usar serviço centralizado para criar pedido no backend
+        const pedidoPayload: Omit<PedidoLocal, 'id'> = {
+          numeroPedido: 0,
+          mesaId: 0,
+          mesaNome: '',
+          status: 'Pendente',
+          itens: payload.itens.map(i => ({
+            id: i.id,
+            produtoId: i.id,
+            nome: i.nome,
+            quantidade: i.quantidade,
+            venda: i.venda,
+            total: i.venda * i.quantidade
+          })),
+          total: payload.total,
+          dataHora: new Date().toISOString(),
+          atendente: profile?.nome ?? 'Cliente',
+          observacoes: undefined,
+        };
 
-        if (!resp.ok) throw new Error('Backend retornou erro ao criar pedido');
-
-        const criado = await resp.json();
+        const criado = await apiServices.pedidoService.create(pedidoPayload);
         console.log('🌐 Pedido sincronizado com backend:', criado);
 
         // Também persistir histórico local (cópia) para exibição no cliente

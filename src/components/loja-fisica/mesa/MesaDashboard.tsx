@@ -12,16 +12,16 @@ import { authStorage } from '@/services/storageService';
 import { useEffect, useState } from 'react';
 
 const MesaDashboard = ({ mesas }: MesaDashboardProps) => {
-  const mesasLivres = mesas.filter(m => m.status === 'Livre').length;
-  const mesasOcupadas = mesas.filter(m => m.status === 'Ocupada').length;
+  const mesasLivres = mesas.filter(m => m.status === 'livre').length;
+  const mesasOcupadas = mesas.filter(m => m.status === 'ocupada').length;
   const totalMesas = mesas.length;
   const ocupacao = totalMesas > 0 ? Math.round((mesasOcupadas / totalMesas) * 100) : 0;
   
   const totalVendas = mesas
-    .filter(m => m.status === 'Ocupada')
+    .filter(m => m.status === 'ocupada')
     .reduce((acc, mesa) => acc + (mesa.itens?.reduce((sum, item) => sum + item.total, 0) || 0), 0);
 
-  const pedidosAtivos = mesas.filter(m => m.status === 'Ocupada' && Number(m.pedido) > 0).length;
+  const pedidosAtivos = mesas.filter(m => m.status === 'ocupada' && Number(m.pedido) > 0).length;
 
   const usuariosAtivos = new Set(
     mesas
@@ -68,7 +68,7 @@ const MesaDashboard = ({ mesas }: MesaDashboardProps) => {
   const { pedidos: pedidosLocais, now } = usePedidosLocais(5000);
 
   const temposMinutos = mesas
-    .filter(m => m.status === 'Ocupada' && Number(m.pedido) > 0)
+    .filter(m => m.status === 'ocupada' && Number(m.pedido) > 0)
     .map(m => {
       const pedido = pedidosLocais.find(p => Number(p.numeroPedido) === Number(m.pedido));
       if (!pedido || !pedido.dataHora) return null;

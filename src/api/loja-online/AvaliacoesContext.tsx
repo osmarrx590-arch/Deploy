@@ -4,6 +4,7 @@ import { useToast } from '@/hooks/use-toast';
 import { Avaliacao, AvaliacoesContextType } from '@/types/avaliacoes';
 import { AvaliacoesContext } from '@/contexts/AvaliacoesContext';
 import { avaliacoesStorage } from '@/services/storageService';
+import apiServices from '@/services/apiServices';
 
 export function AvaliacoesProvider({ children }: { children: ReactNode }) {
   const [avaliacoes, setAvaliacoes] = useState<Avaliacao[]>(() => {
@@ -44,15 +45,8 @@ export function AvaliacoesProvider({ children }: { children: ReactNode }) {
       const payload = { produtoId, rating, comentario };
       console.log('[avaliacoes] sending CREATE/UPDATE ->', payload);
       try {
-        const res = await fetch(`${import.meta.env.VITE_BACKEND_URL ?? 'http://localhost:8000'}/avaliacoes/`, {
-          method: 'POST',
-          credentials: 'include',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(payload),
-        });
-        let json = null;
-        try { json = await res.json(); } catch (e) { /* ignore non-json */ }
-        console.log('[avaliacoes] backend response (CREATE/UPDATE):', res.status, json);
+        const json = await apiServices.avaliacaoService.create(payload);
+        console.log('[avaliacoes] backend response (CREATE/UPDATE):', json);
       } catch (err) {
         console.error('[avaliacoes] error sending CREATE/UPDATE:', err);
       }
@@ -71,13 +65,8 @@ export function AvaliacoesProvider({ children }: { children: ReactNode }) {
     (async () => {
       console.log('[avaliacoes] sending DELETE ->', { produtoId });
       try {
-        const res = await fetch(`${import.meta.env.VITE_BACKEND_URL ?? 'http://localhost:8000'}/avaliacoes/${produtoId}`, {
-          method: 'DELETE',
-          credentials: 'include',
-        });
-        let json = null;
-        try { json = await res.json(); } catch (e) { /* ignore */ }
-        console.log('[avaliacoes] backend response (DELETE):', res.status, json);
+        const json = await apiServices.avaliacaoService.remove(produtoId);
+        console.log('[avaliacoes] backend response (DELETE):', json);
       } catch (err) {
         console.error('[avaliacoes] error sending DELETE:', err);
       }

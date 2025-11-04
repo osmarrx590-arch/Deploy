@@ -21,10 +21,6 @@ const ProdutoDialog = ({
     <Dialog open={isOpen} onOpenChange={onOpenChange}>
       {!slug && (
         <DialogTrigger asChild>
-          <Button>
-            <Plus className="mr-2 h-4 w-4" />
-            Novo Produto
-          </Button>
         </DialogTrigger>
       )}
       <DialogContent className="sm:max-w-[600px]">

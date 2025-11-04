@@ -104,7 +104,7 @@ export const ComandaCard = ({
 
     // Atualizar a mesa para status de preparo usando o valor correto do enum
     mesaService.atualizarMesa(mesaId, {
-      statusPedido: 'Preparando'
+      statusPedido: 'preparando'
     });
 
     // Fechar diálogo
