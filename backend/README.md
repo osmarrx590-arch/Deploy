@@ -179,3 +179,49 @@ Notas:
 - O script usa os modelos definidos em `core_models.py`, `fisica_models.py` e `user_models.py`.
 - Usuário criado por padrão: `admin` (senha `admin123`). Altere conforme necessário em produção.
 - Se quiser popular com mais produtos, edite `PRODUTOS_SAMPLE` no script ou solicite que eu importe a lista completa.
+
+## Integração Mercado Pago (ambiente de teste)
+
+O backend já expõe o endpoint POST `/mp/create_preference/` que encaminha a requisição para a API do Mercado Pago.
+
+Para usar em modo de teste (sandbox) faça o seguinte:
+
+1. Obtenha o Access Token de teste (Sandbox) no painel do Mercado Pago:
+    - Acesse https://developers.mercadopago.com.br/ e faça login com a conta de teste.
+    - Vá em "Credenciais" (Credentials) e copie o Access Token (TEST-...).
+
+2. Defina a variável de ambiente no PowerShell antes de iniciar o servidor:
+
+```powershell
+$env:MERCADO_PAGO_ACCESS_TOKEN = "TEST-SEU_TOKEN_AQUI"
+python -m uvicorn backend.main:app --reload --port 8000
+```
+
+Ou para persistir no Windows (abre uma nova sessão do shell depois):
+
+```powershell
+setx MERCADO_PAGO_ACCESS_TOKEN "TEST-SEU_TOKEN_AQUI"
+```
+
+3. (Frontend) aponte `VITE_BACKEND_URL` para `http://localhost:8000` criando um arquivo `.env.local` na raiz do projeto com:
+
+```
+VITE_BACKEND_URL=http://localhost:8000
+```
+
+4. Teste rapidamente o endpoint com PowerShell (exemplo):
+
+```powershell
+$body = @{ 
+   items = @(@{ title = 'Teste'; unit_price = 10; quantity = 1 }),
+   back_urls = @{ success = 'http://localhost:5173/loja-online/historico?payment=success'; failure = 'http://localhost:5173/loja-online/checkout?payment=failure'; pending = 'http://localhost:5173/loja-online/historico?payment=pending' },
+   auto_return = 'approved',
+   external_reference = 'teste-123'
+} | ConvertTo-Json -Depth 4
+
+Invoke-RestMethod -Uri http://localhost:8000/mp/create_preference/ -Method Post -Body $body -ContentType 'application/json'
+```
+
+A resposta deve conter `init_point` e `sandbox_init_point`. O frontend já usa `sandbox_init_point || init_point` para redirecionar.
+
+Observação: nunca comite o token no repositório. Use variáveis de ambiente.

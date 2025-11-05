@@ -150,3 +150,36 @@ class MovimentacaoEstoque(MovimentacaoEstoqueBase):
 
     class Config:
         orm_mode = True
+
+
+# Schemas para Carrinho
+class CarrinhoItemBase(BaseModel):
+    produtoId: int
+    quantidade: int = 1
+
+class CarrinhoItemCreate(CarrinhoItemBase):
+    pass
+
+class CarrinhoItem(CarrinhoItemBase):
+    id: int
+    precoUnitario: Optional[Decimal] = None
+    created_at: Optional[datetime]
+
+    class Config:
+        orm_mode = True
+
+
+class CarrinhoBase(BaseModel):
+    itens: List[CarrinhoItemCreate] = []
+
+class CarrinhoCreate(CarrinhoBase):
+    usuarioId: Optional[int] = None
+
+class Carrinho(CarrinhoBase):
+    id: int
+    usuarioId: int
+    created_at: datetime
+    itens: List[CarrinhoItem]
+
+    class Config:
+        orm_mode = True

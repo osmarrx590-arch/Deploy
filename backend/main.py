@@ -4,6 +4,10 @@ from sqlalchemy.orm import Session
 from typing import List, Optional
 from backend import crud, models, schemas
 from .database import engine, get_db
+import os
+import requests
+from pydantic import BaseModel
+from typing import Dict, Any
 
 # Criar tabelas no banco de dados
 models.Base.metadata.create_all(bind=engine)
@@ -355,12 +359,32 @@ def delete_mesa(mesa_id: int, db: Session = Depends(get_db)):
 
 # Pedido endpoints
 @app.post("/pedidos/", response_model=schemas.Pedido)
-def create_pedido(
-    pedido: schemas.PedidoCreate,
-    usuario_id: int,
-    db: Session = Depends(get_db)
-):
-    return crud.create_pedido(db=db, pedido=pedido, usuario_id=usuario_id)
+def create_pedido(payload: dict, db: Session = Depends(get_db)):
+    """Cria um pedido.
+
+    Aceita JSON no corpo com a estrutura do pedido. Exemplos esperados:
+    - { "itens": [...], "tipo": "online", "status": "...", "usuarioId": 1 }
+    - ou { "pedido": { ... }, "usuarioId": 1 }
+    """
+    # Suportar envelope { "pedido": {...}, "usuarioId": X } ou corpo direto
+    pedido_data = payload.get('pedido') if isinstance(payload, dict) and payload.get('pedido') else payload
+    usuario_id = None
+    if isinstance(payload, dict):
+        usuario_id = payload.get('usuarioId') or payload.get('usuario_id')
+        # também tentar dentro de pedido_data (caso envelope)
+        if not usuario_id and isinstance(pedido_data, dict):
+            usuario_id = pedido_data.get('usuarioId') or pedido_data.get('usuario_id')
+
+    if usuario_id is None:
+        raise HTTPException(status_code=400, detail='usuarioId is required in request body')
+
+    # Construir pydantic model para validação/compatibilidade com crud.create_pedido
+    try:
+        pedido_obj = schemas.PedidoCreate(**pedido_data) if isinstance(pedido_data, dict) else schemas.PedidoCreate(**{ 'itens': [] })
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=f'Invalid pedido payload: {e}')
+
+    return crud.create_pedido(db=db, pedido=pedido_obj, usuario_id=int(usuario_id))
 
 @app.get("/pedidos/", response_model=List[schemas.Pedido])
 def read_pedidos(
@@ -431,18 +455,28 @@ def delete_item_mesa(mesa_id: int, item_id: int, db: Session = Depends(get_db)):
 
 # Avaliacoes endpoints
 @app.post("/produtos/{produto_id}/avaliacoes/")
-def create_produto_avaliacao(
-    produto_id: int,
-    rating: int,
-    usuario_id: int,
-    comentario: Optional[str] = None,
-    db: Session = Depends(get_db)
-):
+def create_produto_avaliacao(produto_id: int, payload: dict = {}, db: Session = Depends(get_db)):
+    """Cria uma avaliação para um produto. Aceita JSON no body com keys: rating, usuarioId/usuario_id, comentario."""
+    # aceitar tanto camelCase quanto snake_case
+    rating = None
+    usuario_id = None
+    comentario = None
+    if isinstance(payload, dict):
+        rating = payload.get('rating') or payload.get('nota')
+        usuario_id = payload.get('usuarioId') or payload.get('usuario_id')
+        comentario = payload.get('comentario') or payload.get('comentario')
+
+    # fallback para query params se frontend enviar assim (compatibilidade)
+    if rating is None:
+        raise HTTPException(status_code=400, detail='rating is required')
+    if usuario_id is None:
+        raise HTTPException(status_code=400, detail='usuarioId is required')
+
     return crud.create_avaliacao(
         db=db,
-        usuario_id=usuario_id,
-        produto_id=produto_id,
-        rating=rating,
+        usuario_id=int(usuario_id),
+        produto_id=int(produto_id),
+        rating=int(rating),
         comentario=comentario
     )
 
@@ -450,10 +484,48 @@ def create_produto_avaliacao(
 def read_produto_avaliacoes(produto_id: int, db: Session = Depends(get_db)):
     return crud.get_avaliacoes_produto(db, produto_id=produto_id)
 
+
+# Rotas compatíveis com frontend (root)
+@app.post("/avaliacoes/")
+def create_avaliacao_root(payload: dict, session: str | None = Cookie(None), db: Session = Depends(get_db)):
+    """Cria avaliação aceitando payload { produtoId, rating, comentario } e usando usuarioId do cookie de sessão quando disponível."""
+    if not isinstance(payload, dict):
+        raise HTTPException(status_code=400, detail='Invalid payload')
+    produto_id = payload.get('produtoId') or payload.get('produto_id')
+    rating = payload.get('rating')
+    comentario = payload.get('comentario')
+    usuario_id = payload.get('usuarioId') or payload.get('usuario_id')
+    if usuario_id is None and session:
+        try:
+            usuario_id = int(session)
+        except Exception:
+            usuario_id = None
+    if produto_id is None or rating is None:
+        raise HTTPException(status_code=400, detail='produtoId and rating are required')
+    if usuario_id is None:
+        raise HTTPException(status_code=401, detail='Not authenticated')
+    return crud.create_avaliacao(db=db, usuario_id=int(usuario_id), produto_id=int(produto_id), rating=int(rating), comentario=comentario)
+
+
+@app.get("/avaliacoes/{produto_id}")
+def read_avaliacoes_root(produto_id: int, db: Session = Depends(get_db)):
+    return crud.get_avaliacoes_produto(db, produto_id=produto_id)
+
 # Favoritos endpoints
 @app.post("/produtos/{produto_id}/favoritos/{usuario_id}")
 def create_produto_favorito(produto_id: int, usuario_id: int, db: Session = Depends(get_db)):
     return crud.create_favorito(db=db, usuario_id=usuario_id, produto_id=produto_id)
+
+
+@app.post("/produtos/{produto_id}/favoritos/")
+def create_produto_favorito_body(produto_id: int, payload: dict = {}, db: Session = Depends(get_db)):
+    """Cria favorito aceitando JSON no body: { "usuarioId": 1 }"""
+    usuario_id = None
+    if isinstance(payload, dict):
+        usuario_id = payload.get('usuarioId') or payload.get('usuario_id')
+    if usuario_id is None:
+        raise HTTPException(status_code=400, detail='usuarioId is required in body')
+    return crud.create_favorito(db=db, usuario_id=int(usuario_id), produto_id=int(produto_id))
 
 @app.get("/usuarios/{usuario_id}/favoritos/")
 def read_usuario_favoritos(usuario_id: int, db: Session = Depends(get_db)):
@@ -465,6 +537,55 @@ def delete_produto_favorito(produto_id: int, usuario_id: int, db: Session = Depe
     if not success:
         raise HTTPException(status_code=404, detail="Favorito not found")
     return {"status": "success"}
+
+
+# Rotas compatíveis com frontend (root /favoritos)
+@app.post('/favoritos/')
+def create_favorito_root(payload: dict, session: str | None = Cookie(None), db: Session = Depends(get_db)):
+    """Cria favorito a partir de { produtoId } no body. Usa cookie de sessão para identificar usuário quando presente."""
+    if not isinstance(payload, dict):
+        raise HTTPException(status_code=400, detail='Invalid payload')
+    produto_id = payload.get('produtoId') or payload.get('produto_id')
+    usuario_id = payload.get('usuarioId') or payload.get('usuario_id')
+    if usuario_id is None and session:
+        try:
+            usuario_id = int(session)
+        except Exception:
+            usuario_id = None
+    if produto_id is None:
+        raise HTTPException(status_code=400, detail='produtoId is required')
+    if usuario_id is None:
+        raise HTTPException(status_code=401, detail='Not authenticated')
+    return crud.create_favorito(db=db, usuario_id=int(usuario_id), produto_id=int(produto_id))
+
+
+@app.delete('/favoritos/{produto_id}')
+def delete_favorito_root(produto_id: int, session: str | None = Cookie(None), db: Session = Depends(get_db)):
+    usuario_id = None
+    if session:
+        try:
+            usuario_id = int(session)
+        except Exception:
+            usuario_id = None
+    if usuario_id is None:
+        raise HTTPException(status_code=401, detail='Not authenticated')
+    success = crud.remove_favorito(db=db, usuario_id=int(usuario_id), produto_id=produto_id)
+    if not success:
+        raise HTTPException(status_code=404, detail='Favorito not found')
+    return { 'status': 'success' }
+
+
+@app.get('/favoritos/')
+def read_favoritos_root(session: str | None = Cookie(None), db: Session = Depends(get_db)):
+    usuario_id = None
+    if session:
+        try:
+            usuario_id = int(session)
+        except Exception:
+            usuario_id = None
+    if usuario_id is None:
+        raise HTTPException(status_code=401, detail='Not authenticated')
+    return crud.get_favoritos_usuario(db=db, usuario_id=int(usuario_id))
 
 # Empresa endpoints
 @app.post("/empresas/", response_model=schemas.Empresa)
@@ -505,6 +626,102 @@ def delete_empresa(empresa_id: int, db: Session = Depends(get_db)):
 
 
 # === Estoque / Movimentações de Estoque ===
+
+
+# Endpoints para carrinho (compatibilidade com frontend)
+@app.get('/carrinho/')
+def read_carrinho(session: str | None = Cookie(None), db: Session = Depends(get_db)):
+    """Retorna o carrinho do usuário autenticado (cookie session) ou 401 se não autenticado."""
+    usuario_id = None
+    if session:
+        try:
+            usuario_id = int(session)
+        except Exception:
+            usuario_id = None
+    if usuario_id is None:
+        raise HTTPException(status_code=401, detail='Not authenticated')
+    cart = crud.get_carrinho_por_usuario(db, usuario_id=usuario_id)
+    if not cart:
+        return { 'id': None, 'usuarioId': usuario_id, 'itens': [] }
+    # mapear itens
+    itens = []
+    for it in cart.itens:
+        produto = None
+        try:
+            produto = it.produto
+        except Exception:
+            produto = None
+        itens.append({
+            'id': it.id,
+            'produtoId': it.produto_id,
+            'nome': produto.nome if produto else None,
+            'quantidade': int(it.quantidade or 0),
+            'precoUnitario': float(it.preco_unitario) if it.preco_unitario is not None else None,
+            'created_at': it.created_at.isoformat() if it.created_at else None
+        })
+    return { 'id': cart.id, 'usuarioId': cart.usuario_id, 'itens': itens }
+
+
+@app.post('/carrinho/')
+def replace_carrinho(payload: dict, session: str | None = Cookie(None), db: Session = Depends(get_db)):
+    """Substitui todo o carrinho do usuário (body: { itens: [...] })."""
+    usuario_id = None
+    if session:
+        try:
+            usuario_id = int(session)
+        except Exception:
+            usuario_id = None
+    # aceitar também usuarioId no body para dev
+    if usuario_id is None:
+        usuario_id = payload.get('usuarioId') or payload.get('usuario_id')
+    if usuario_id is None:
+        raise HTTPException(status_code=401, detail='Not authenticated')
+    itens = payload.get('itens') or payload.get('carrinho') or []
+    try:
+        cart = crud.replace_carrinho_items(db, usuario_id=int(usuario_id), items=itens)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f'Erro ao salvar carrinho: {e}')
+    # retornar carrinho atualizado
+    return read_carrinho(session=str(usuario_id), db=db)
+
+
+@app.post('/carrinho/items')
+def add_item_carrinho(payload: dict, session: str | None = Cookie(None), db: Session = Depends(get_db)):
+    usuario_id = None
+    if session:
+        try:
+            usuario_id = int(session)
+        except Exception:
+            usuario_id = None
+    if usuario_id is None:
+        usuario_id = payload.get('usuarioId') or payload.get('usuario_id')
+    if usuario_id is None:
+        raise HTTPException(status_code=401, detail='Not authenticated')
+    produto_id = payload.get('produtoId') or payload.get('id')
+    quantidade = payload.get('quantidade') or payload.get('qtd') or 1
+    if produto_id is None:
+        raise HTTPException(status_code=400, detail='produtoId is required')
+    try:
+        cart = crud.add_item_to_carrinho(db, usuario_id=int(usuario_id), produto_id=int(produto_id), quantidade=int(quantidade))
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f'Erro ao adicionar item: {e}')
+    return { 'status': 'ok', 'carrinhoId': cart.id }
+
+
+@app.delete('/carrinho/items/{produto_id}')
+def delete_item_carrinho(produto_id: int, session: str | None = Cookie(None), db: Session = Depends(get_db)):
+    usuario_id = None
+    if session:
+        try:
+            usuario_id = int(session)
+        except Exception:
+            usuario_id = None
+    if usuario_id is None:
+        raise HTTPException(status_code=401, detail='Not authenticated')
+    ok = crud.remove_item_from_carrinho(db, usuario_id=int(usuario_id), produto_id=produto_id)
+    if not ok:
+        raise HTTPException(status_code=404, detail='Item not found')
+    return { 'status': 'success' }
 
 @app.get("/estoque/movimentacoes", response_model=List[schemas.MovimentacaoEstoque])
 def read_movimentacoes(db: Session = Depends(get_db)):
@@ -574,6 +791,35 @@ def create_movimentacao(mov: schemas.MovimentacaoEstoqueCreate, db: Session = De
         'quantidadeAnterior': db_mov.quantidade_anterior,
         'quantidadeNova': db_mov.quantidade_nova
     }
+
+
+# Mercado Pago Integration
+class MPPreferenceIn(BaseModel):
+    items: Any
+    back_urls: Dict[str, str]
+    auto_return: Optional[str] = None
+    external_reference: Optional[str] = None
+
+@app.post("/mp/create_preference/", tags=["MercadoPago"])
+def create_mp_preference(pref: MPPreferenceIn):
+    """Cria uma preferência de pagamento no Mercado Pago"""
+    token = os.getenv("MERCADO_PAGO_ACCESS_TOKEN")
+    if not token:
+        raise HTTPException(status_code=500, detail="MERCADO_PAGO_ACCESS_TOKEN not configured on the server")
+
+    url = "https://api.mercadopago.com/checkout/preferences"
+    headers = {"Authorization": f"Bearer {token}", "Content-Type": "application/json"}
+
+    try:
+        resp = requests.post(url, headers=headers, json=pref.dict(exclude_none=True))
+    except requests.RequestException as e:
+        raise HTTPException(status_code=502, detail=f"Erro ao conectar ao Mercado Pago: {str(e)}")
+
+    if not resp.ok:
+        raise HTTPException(status_code=502, detail=f"Mercado Pago error: {resp.status_code} - {resp.text}")
+
+    return resp.json()
+
 
 if __name__ == "__main__":
     import uvicorn

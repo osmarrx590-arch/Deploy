@@ -49,6 +49,20 @@ export function CarrinhoProvider({ children }: { children: React.ReactNode }) {
       return [...carrinhoAtual, { ...produto, quantidade: 1 }];
     });
 
+    // Fire-and-forget: sincronizar com backend
+    (async () => {
+      try {
+        await fetch('/carrinho/items', {
+          method: 'POST',
+          credentials: 'include',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ produtoId: produto.id, quantidade: 1 }),
+        });
+      } catch (err) {
+        console.debug('Erro ao sincronizar item do carrinho com backend:', err);
+      }
+    })();
+
     return true;
   };
 
@@ -61,6 +75,18 @@ export function CarrinhoProvider({ children }: { children: React.ReactNode }) {
     setCarrinho(carrinhoAtual =>
       carrinhoAtual.filter(item => item.id !== produtoId)
     );
+
+    // Fire-and-forget: informar backend
+    (async () => {
+      try {
+        await fetch(`/carrinho/items/${produtoId}`, {
+          method: 'DELETE',
+          credentials: 'include',
+        });
+      } catch (err) {
+        console.debug('Erro ao remover item do carrinho no backend:', err);
+      }
+    })();
   };
 
   const atualizarQuantidade = (produtoId: number, quantidade: number): boolean => {
@@ -90,6 +116,20 @@ export function CarrinhoProvider({ children }: { children: React.ReactNode }) {
       )
     );
 
+    // Fire-and-forget: enviar atualização ao backend (substituir carrinho item quantidade)
+    (async () => {
+      try {
+        // simplificar: reenviar todo o carrinho ao backend
+        await fetch('/carrinho/', {
+          method: 'POST',
+          credentials: 'include',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ itens: carrinho.map(i => ({ produtoId: i.id, quantidade: i.quantidade })) }),
+        });
+      } catch (err) {
+        console.debug('Erro ao atualizar carrinho no backend:', err);
+      }
+    })();
     return true;
   };
 
@@ -100,6 +140,20 @@ export function CarrinhoProvider({ children }: { children: React.ReactNode }) {
 
     setCarrinho([]);
     setCupom(null);
+
+    (async () => {
+      try {
+        // substituir por carrinho vazio
+        await fetch('/carrinho/', {
+          method: 'POST',
+          credentials: 'include',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ itens: [] }),
+        });
+      } catch (err) {
+        console.debug('Erro ao limpar carrinho no backend:', err);
+      }
+    })();
   };
 
   const subtotalCarrinho = carrinho.reduce(

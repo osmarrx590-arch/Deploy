@@ -202,6 +202,31 @@ class Favorito(Base):
     usuario = relationship("User", back_populates="favoritos")
     produto = relationship("Produto", back_populates="favoritos")
 
+
+class Carrinho(Base):
+    __tablename__ = "carrinhos"
+
+    id = Column(Integer, primary_key=True, index=True)
+    usuario_id = Column(Integer, ForeignKey("usuarios.id"))
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+
+    usuario = relationship("User")
+    itens = relationship("CarrinhoItem", back_populates="carrinho", cascade="all, delete-orphan")
+
+
+class CarrinhoItem(Base):
+    __tablename__ = "carrinho_items"
+
+    id = Column(Integer, primary_key=True, index=True)
+    carrinho_id = Column(Integer, ForeignKey("carrinhos.id"))
+    produto_id = Column(Integer, ForeignKey("produtos.id"))
+    quantidade = Column(Integer, default=1)
+    preco_unitario = Column(Numeric(10,2), nullable=True)
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+
+    carrinho = relationship("Carrinho", back_populates="itens")
+    produto = relationship("Produto")
+
 class MovimentacaoEstoque(Base):
     __tablename__ = "movimentacoes_estoque"
 

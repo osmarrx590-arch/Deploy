@@ -160,8 +160,16 @@ def create_pedido(db: Session, pedido: schemas.PedidoCreate, usuario_id: int) ->
                 quantidade=item["quantidade"],
                 preco_unitario=produto.preco_venda
             )
+            # Calcular subtotal imediatamente para evitar None antes do flush/commit
+            try:
+                pedido_item.subtotal = float(pedido_item.quantidade) * float(pedido_item.preco_unitario)
+            except Exception:
+                pedido_item.subtotal = None
             db.add(pedido_item)
-            total += pedido_item.subtotal
+            try:
+                total += float(pedido_item.subtotal or 0)
+            except Exception:
+                total += 0
 
     db_pedido.total = total
     db.commit()
@@ -264,6 +272,11 @@ def add_item_to_pedido(
         quantidade=quantidade,
         preco_unitario=preco
     )
+    # Calcular subtotal antes do flush para manter consistência
+    try:
+        pedido_item.subtotal = float(pedido_item.quantidade) * float(pedido_item.preco_unitario)
+    except Exception:
+        pedido_item.subtotal = None
     db.add(pedido_item)
     db.flush()
 
@@ -389,6 +402,99 @@ def remove_favorito(db: Session, usuario_id: int, produto_id: int) -> bool:
         db.commit()
         return True
     return False
+
+
+# Carrinho
+def get_carrinho_por_usuario(db: Session, usuario_id: int) -> Optional[models.Carrinho]:
+    return db.query(models.Carrinho).filter(models.Carrinho.usuario_id == usuario_id).first()
+
+
+def create_carrinho_for_user(db: Session, usuario_id: int) -> models.Carrinho:
+    db_cart = models.Carrinho(usuario_id=usuario_id)
+    db.add(db_cart)
+    db.commit()
+    db.refresh(db_cart)
+    return db_cart
+
+
+def replace_carrinho_items(db: Session, usuario_id: int, items: List[Dict[str, Any]]) -> models.Carrinho:
+    """Substitui os itens do carrinho do usuário pelo array `items`.
+
+    Items esperados: lista de objetos contendo ao menos produtoId (ou id) e quantidade.
+    """
+    cart = get_carrinho_por_usuario(db, usuario_id=usuario_id)
+    if cart is None:
+        cart = create_carrinho_for_user(db, usuario_id=usuario_id)
+
+    # remover itens existentes
+    for it in list(cart.itens):
+        try:
+            db.delete(it)
+        except Exception:
+            pass
+
+    db.flush()
+
+    # adicionar novos itens
+    for itm in items:
+        pid = itm.get('produtoId') or itm.get('id')
+        quantidade = itm.get('quantidade') or itm.get('qtd') or itm.get('qty') or 1
+        if pid is None:
+            continue
+        produto = db.query(models.Produto).filter(models.Produto.id == int(pid)).first()
+        if not produto:
+            continue
+        ci = models.CarrinhoItem(
+            carrinho_id=cart.id,
+            produto_id=produto.id,
+            quantidade=int(quantidade),
+            preco_unitario=float(produto.preco_venda) if produto.preco_venda is not None else None
+        )
+        db.add(ci)
+
+    db.commit()
+    db.refresh(cart)
+    return cart
+
+
+def add_item_to_carrinho(db: Session, usuario_id: int, produto_id: int, quantidade: int = 1) -> models.Carrinho:
+    cart = get_carrinho_por_usuario(db, usuario_id=usuario_id)
+    if cart is None:
+        cart = create_carrinho_for_user(db, usuario_id=usuario_id)
+
+    # verificar item existente
+    item = db.query(models.CarrinhoItem).filter(models.CarrinhoItem.carrinho_id == cart.id, models.CarrinhoItem.produto_id == produto_id).first()
+    produto = db.query(models.Produto).filter(models.Produto.id == produto_id).first()
+    if not produto:
+        raise Exception(f"Produto {produto_id} não encontrado")
+
+    if item:
+        item.quantidade = int(item.quantidade or 0) + int(quantidade)
+        db.add(item)
+    else:
+        item = models.CarrinhoItem(
+            carrinho_id=cart.id,
+            produto_id=produto.id,
+            quantidade=int(quantidade),
+            preco_unitario=float(produto.preco_venda) if produto.preco_venda is not None else None
+        )
+        db.add(item)
+
+    db.commit()
+    db.refresh(cart)
+    return cart
+
+
+def remove_item_from_carrinho(db: Session, usuario_id: int, produto_id: int) -> bool:
+    cart = get_carrinho_por_usuario(db, usuario_id=usuario_id)
+    if cart is None:
+        return False
+    item = db.query(models.CarrinhoItem).filter(models.CarrinhoItem.carrinho_id == cart.id, models.CarrinhoItem.produto_id == produto_id).first()
+    if not item:
+        return False
+    db.delete(item)
+    db.commit()
+    return True
 
 # Pagamento
 def create_pagamento(

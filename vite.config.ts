@@ -36,6 +36,16 @@ export default defineConfig(({ mode }) => ({
         changeOrigin: true,
         secure: false,
       },
+      '/favoritos': {
+        target: 'http://127.0.0.1:8000',
+        changeOrigin: true,
+        secure: false,
+      },
+      '/avaliacoes': {
+        target: 'http://127.0.0.1:8000',
+        changeOrigin: true,
+        secure: false,
+      },
       '/mesas': {
         target: 'http://127.0.0.1:8000',
         changeOrigin: true,
@@ -52,6 +62,12 @@ export default defineConfig(({ mode }) => ({
         secure: false,
       },
       '/estoque': {
+        target: 'http://127.0.0.1:8000',
+        changeOrigin: true,
+        secure: false,
+      }
+      ,
+      '/carrinho': {
         target: 'http://127.0.0.1:8000',
         changeOrigin: true,
         secure: false,
