@@ -80,10 +80,26 @@ async def log_requests(request: Request, call_next):
         raise
 
 # Configurar CORS
-# Configurar CORS para permitir origens locais e Lovable
+# Permitir configurar origens via variável de ambiente ALLOWED_ORIGINS (CSV).
+# Se não definida, usar uma lista segura de origens locais + domínio do frontend hospedado.
+_default_origins = [
+    "http://localhost:8080",  # Vite dev
+    "http://localhost:3000",
+    "http://127.0.0.1:8080",
+    "http://127.0.0.1:3000",
+    "https://comerce-web-frontend.onrender.com",
+]
+
+_env_origins = os.environ.get("ALLOWED_ORIGINS")
+if _env_origins:
+    # permitir que o deploy especifique múltiplas origens separadas por vírgula
+    allowed_origins = [o.strip() for o in _env_origins.split(",") if o.strip()]
+else:
+    allowed_origins = _default_origins
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origin_regex=r"https://.*\.(lovable\.app|lovableproject\.com)|http://localhost:\d+|http://127\.0\.0\.1:\d+",
+    allow_origins=allowed_origins,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
