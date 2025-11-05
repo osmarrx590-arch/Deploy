@@ -24,6 +24,16 @@ import { PedidoLocal } from '@/types/pedido';
 import { formataPreco } from '@/contexts/moeda';
 import { confirmarConsumoEstoque } from '@/services/estoqueReservaService';
 import { registrarSaida } from '@/services/movimentacaoEstoqueService';
+// Tipos locais para evitar `any` ao enviar payloads ao backend e ao Mercado Pago
+type BackendPedidoPayload = Omit<PedidoLocal, 'id'> & { tipo: 'online'; usuarioId: number };
+
+type PreferenceItem = { title: string; unit_price: number; quantity: number };
+type PreferenceData = {
+  items: PreferenceItem[];
+  back_urls: { success: string; failure: string; pending: string };
+  external_reference: string;
+  auto_return?: string;
+};
 
 const Checkout = () => {
   // Hooks para gerenciamento do carrinho e navegação
@@ -78,17 +88,17 @@ const Checkout = () => {
       // com o serviço existente (PedidoLocal não define `usuarioId`), fazemos
       // um cast ao enviar — isto apenas evita erro de tipagem TS, o JSON enviado
       // terá `usuarioId` corretamente.
-      const backendPedidoPayload = {
+      const backendPedidoPayload: BackendPedidoPayload = {
         ...pedidoPayload,
         usuarioId: user?.id ?? Number(profile?.user_id ?? 0),
-      } as any;
+      };
 
       const pedidoCriado = await apiServices.pedidoService.create(backendPedidoPayload);
       console.log('🌐 Pedido criado no backend:', pedidoCriado);
 
       // Montar payload de preferência para Mercado Pago
       const backendUrl = import.meta.env.VITE_BACKEND_URL || 'http://localhost:8000';
-      const preferenceData = {
+      const preferenceData: PreferenceData = {
         items: carrinho.map(item => ({
           title: item.nome,
           unit_price: item.venda,
@@ -105,7 +115,7 @@ const Checkout = () => {
       // Detectar se estamos em ambiente localhost (Mercado Pago não aceita auto_return com URLs locais)
       const isLocalhost = ['localhost', '127.0.0.1', '[::1]'].includes(window.location.hostname);
       if (!isLocalhost) {
-        (preferenceData as any).auto_return = 'approved';
+        preferenceData.auto_return = 'approved';
       }
 
       // Solicitar ao backend que crie a preferência no Mercado Pago
