@@ -39,9 +39,7 @@ class PedidoCreate(PedidoBase):
 class User(UserBase):
     id: int
     created_at: datetime
-    
-    class Config:
-        orm_mode = True
+    model_config = {"from_attributes": True}
 
 # Outros schemas necessários (moved above Produto so Produto can reference Categoria type)
 class CategoriaBase(BaseModel):
@@ -53,9 +51,7 @@ class CategoriaCreate(CategoriaBase):
 
 class Categoria(CategoriaBase):
     id: int
-    
-    class Config:
-        orm_mode = True
+    model_config = {"from_attributes": True}
 
 
 class Produto(ProdutoBase):
@@ -63,9 +59,7 @@ class Produto(ProdutoBase):
     estoque: int
     categoria: Categoria
     created_at: datetime
-    
-    class Config:
-        orm_mode = True
+    model_config = {"from_attributes": True}
 
 class PedidoItem(BaseModel):
     id: int
@@ -74,9 +68,7 @@ class PedidoItem(BaseModel):
     quantidade: int
     preco_unitario: Decimal
     subtotal: Decimal
-    
-    class Config:
-        orm_mode = True
+    model_config = {"from_attributes": True}
 
 class Pedido(PedidoBase):
     id: int
@@ -84,9 +76,7 @@ class Pedido(PedidoBase):
     total: Decimal
     created_at: datetime
     itens: List[PedidoItem]
-    
-    class Config:
-        orm_mode = True
+    model_config = {"from_attributes": True}
 
 # Outros schemas necessários
 class EmpresaBase(BaseModel):
@@ -101,9 +91,7 @@ class EmpresaCreate(EmpresaBase):
 
 class Empresa(EmpresaBase):
     id: int
-    
-    class Config:
-        orm_mode = True
+    model_config = {"from_attributes": True}
 
 class MesaBase(BaseModel):
     nome: str
@@ -121,9 +109,7 @@ class Mesa(MesaBase):
     pedido: Optional[str] = None
     itens: Optional[List[dict]] = []
     statusPedido: Optional[str] = None
-    
-    class Config:
-        orm_mode = True
+    model_config = {"from_attributes": True}
 
 
 # Movimentação de Estoque (Pydantic schemas)
@@ -147,9 +133,7 @@ class MovimentacaoEstoque(MovimentacaoEstoqueBase):
     quantidadeAnterior: Optional[int] = None
     quantidadeNova: Optional[int] = None
     data: datetime
-
-    class Config:
-        orm_mode = True
+    model_config = {"from_attributes": True}
 
 
 # Schemas para Carrinho
@@ -164,9 +148,7 @@ class CarrinhoItem(CarrinhoItemBase):
     id: int
     precoUnitario: Optional[Decimal] = None
     created_at: Optional[datetime]
-
-    class Config:
-        orm_mode = True
+    model_config = {"from_attributes": True}
 
 
 class CarrinhoBase(BaseModel):
@@ -180,6 +162,4 @@ class Carrinho(CarrinhoBase):
     usuarioId: int
     created_at: datetime
     itens: List[CarrinhoItem]
-
-    class Config:
-        orm_mode = True
+    model_config = {"from_attributes": True}

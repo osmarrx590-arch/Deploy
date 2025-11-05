@@ -15,7 +15,7 @@ estão na mesma pasta e expõem `Session`, `Base` e os modelos utilizados.
 """  """
 """
 $env:PYTHONPATH = (Get-Location).Path
-python .\backend\populate_db_sqlalchemy.py
+python ./backend/populate_db_sqlalchemy.py
 """
 # populate_db_sqlalchemy.py
 import os
