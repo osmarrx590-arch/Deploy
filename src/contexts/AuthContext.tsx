@@ -99,8 +99,52 @@ const AuthProviderComponent = ({ children }: AuthProviderProps) => {
   useEffect(() => {
     const init = async () => {
       setIsLoading(true);
+      const hasBackendUrl = !!import.meta.env.VITE_BACKEND_URL;
+      
       try {
-        // PRIORIDADE: Usar localStorage primeiro
+        // Se tem BACKEND_URL configurado, tentar usar backend FastAPI primeiro
+        if (hasBackendUrl) {
+          try {
+            const me = await userService.me();
+            const data = me as unknown as BackendUser & { session?: BackendSession };
+            const backendUser: BackendUser = {
+              id: Number((data as Partial<BackendUser>)?.id ?? 0),
+              username: data.nome,
+              email: data.email,
+              nome: data.nome,
+              tipo: data.tipo,
+              created_at: data.created_at,
+              updated_at: data.updated_at,
+            };
+            setUser(backendUser);
+            setProfile({
+              id: String(data.id),
+              user_id: String(data.id),
+              nome: data.nome,
+              email: data.email,
+              tipo: (data.tipo || 'online') as Profile['tipo'],
+            });
+            setSession((data.session ?? null) as BackendSession | null);
+            // Sincronizar com localStorage
+            try { 
+              authStorage.setUser({ 
+                id: backendUser.id, 
+                nome: backendUser.nome, 
+                email: backendUser.email, 
+                type: backendUser.tipo === 'fisica' || backendUser.tipo === 'online' ? backendUser.tipo : 'online', 
+                tipo: backendUser.tipo, 
+                createdAt: data.created_at ? new Date(data.created_at) : new Date() 
+              }); 
+            } catch (e) { console.debug(e); }
+            console.log('✅ Autenticação via Backend FastAPI');
+            setIsLoading(false);
+            return;
+          } catch (backendErr) {
+            console.log('Backend não respondeu, usando localStorage como fallback');
+          }
+        }
+
+        // FALLBACK: Usar localStorage (Lovable ou quando backend não disponível)
         const localUser = authStorage.getUser();
         if (localUser) {
           const backendUser: BackendUser = {
@@ -124,35 +168,6 @@ const AuthProviderComponent = ({ children }: AuthProviderProps) => {
           setUser(null);
           setProfile(null);
         }
-
-        /* BACKEND FASTAPI - COMENTADO PARA USAR LOCALSTORAGE
-        // Tenta sincronizar com backend se disponível
-        try {
-          const me = await userService.me();
-          const data = me as unknown as BackendUser & { session?: BackendSession };
-          const backendUser: BackendUser = {
-            id: Number((data as Partial<BackendUser>)?.id ?? 0),
-            email: data.email,
-            nome: data.nome,
-            tipo: data.tipo,
-            created_at: data.created_at,
-            updated_at: data.updated_at,
-            ...data,
-          };
-          setUser(backendUser);
-          setProfile({
-            id: String(data.id),
-            user_id: String(data.id),
-            nome: data.nome,
-            email: data.email,
-            tipo: (data.tipo || 'online') as Profile['tipo'],
-          });
-          setSession((data.session ?? null) as BackendSession | null);
-          try { authStorage.setUser({ id: Number((data as Partial<BackendUser>)?.id ?? 0), nome: data.nome, email: data.email, type: (data.tipo === 'fisica' || data.tipo === 'online') ? data.tipo : 'online', tipo: data.tipo, createdAt: data.created_at ? new Date(data.created_at) : new Date() }); } catch (e) { console.debug(e); }
-        } catch (backendErr) {
-          console.debug('Backend não disponível, usando apenas localStorage');
-        }
-        */
       } catch (err) {
         const e = err as unknown;
         console.error('Error initializing auth:', e);
@@ -205,17 +220,21 @@ const AuthProviderComponent = ({ children }: AuthProviderProps) => {
   };
 
   async function signIn(email: string, password: string): Promise<AuthResult> {
+    const hasBackendUrl = !!import.meta.env.VITE_BACKEND_URL;
+    
     try {
-      // Tenta login via BACKEND primeiro
-      try {
-        await userService.login(email, password);
-        // backend usa cookie httpOnly; buscar /auth/me para popular estado
-        await fetchProfile();
-        toast({ title: 'Login realizado', description: 'Bem-vindo!' });
-        return { error: null, user: user ?? null, session: session ?? null };
-      } catch (backendErr) {
-        console.debug('Backend login falhou, tentando fallback localStorage:', backendErr);
-        // se backend falhar, continuar para fallback localStorage
+      // Se tem BACKEND_URL, tentar login via FastAPI primeiro
+      if (hasBackendUrl) {
+        try {
+          await userService.login(email, password);
+          // backend usa cookie httpOnly; buscar /auth/me para popular estado
+          await fetchProfile();
+          toast({ title: 'Login realizado', description: 'Bem-vindo!' });
+          return { error: null, user: user ?? null, session: session ?? null };
+        } catch (backendErr) {
+          console.debug('Backend login falhou, usando fallback localStorage:', backendErr);
+          // se backend falhar, continuar para fallback localStorage
+        }
       }
 
       // FALLBACK: LOGIN VIA LOCALSTORAGE
@@ -270,17 +289,21 @@ const AuthProviderComponent = ({ children }: AuthProviderProps) => {
   }
 
   async function signUp(email: string, password: string, nome: string, tipo: 'fisica' | 'online' = 'online'): Promise<AuthResult> {
+    const hasBackendUrl = !!import.meta.env.VITE_BACKEND_URL;
+    
     try {
-      // Tenta registrar no BACKEND primeiro
-      try {
-        await userService.register({ email, password, nome, tipo });
-        // backend pode fazer auto-login via cookie; buscar perfil
-        await fetchProfile();
-        toast({ title: 'Registro realizado', description: 'Conta criada com sucesso.' });
-        return { error: null, user: user ?? null, session: session ?? null };
-      } catch (backendErr) {
-        console.debug('Backend register falhou, tentando fallback localStorage:', backendErr);
-        // se backend falhar, continuar para fallback localStorage
+      // Se tem BACKEND_URL, tentar registrar no FastAPI primeiro
+      if (hasBackendUrl) {
+        try {
+          await userService.register({ email, password, nome, tipo });
+          // backend pode fazer auto-login via cookie; buscar perfil
+          await fetchProfile();
+          toast({ title: 'Registro realizado', description: 'Conta criada com sucesso.' });
+          return { error: null, user: user ?? null, session: session ?? null };
+        } catch (backendErr) {
+          console.debug('Backend register falhou, usando fallback localStorage:', backendErr);
+          // se backend falhar, continuar para fallback localStorage
+        }
       }
 
       // FALLBACK: REGISTRO VIA LOCALSTORAGE
@@ -335,24 +358,25 @@ const AuthProviderComponent = ({ children }: AuthProviderProps) => {
   }
 
   const signOut = async () => {
+    const hasBackendUrl = !!import.meta.env.VITE_BACKEND_URL;
+    
     try {
-      // LOGOUT VIA LOCALSTORAGE
+      // Se tem BACKEND_URL, tentar logout no FastAPI
+      if (hasBackendUrl) {
+        try {
+          await userService.logout();
+        } catch (backendErr) {
+          console.debug('Backend logout falhou:', backendErr);
+        }
+      }
+      
+      // Sempre limpar estado local
       setUser(null);
       setProfile(null);
       setSession(null);
       authStorage.removeUser();
       toast({ title: 'Logout realizado', description: 'Até logo!' });
       return { error: null };
-
-      /* BACKEND FASTAPI - COMENTADO PARA USAR LOCALSTORAGE
-      await userService.logout();
-      setUser(null);
-      setProfile(null);
-      setSession(null);
-      try { authStorage.removeUser(); } catch (e) { console.debug(e); }
-      toast({ title: 'Logout realizado', description: 'Até logo!' });
-      return { error: null };
-      */
     } catch (err) {
       const e = err as unknown;
       const msg = (e as Error)?.message ?? String(e);
