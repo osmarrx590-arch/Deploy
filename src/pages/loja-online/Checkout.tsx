@@ -1,5 +1,5 @@
 
-// D:\OsmarSoftware\happy-hops-home - Sem a integração do mercado pago\src\pages\loja-online\Checkout.tsx
+// Integração direta com Mercado Pago - Frontend Only
 import React, { useState } from 'react';
 import { useCarrinho } from '@/hooks/useCarrinho';
 import { useToast } from '@/hooks/use-toast';
@@ -11,7 +11,6 @@ import {
   Dialog,
   DialogContent,
   DialogDescription,
-  DialogFooter,
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
@@ -19,20 +18,33 @@ import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { Label } from "@/components/ui/label";
 import { salvarPedidoNoHistorico } from '@/services/pedidoHistoricoService';
 import { useAuth } from '@/contexts/AuthContext';
-import apiServices from '@/services/apiServices';
-import { PedidoLocal } from '@/types/pedido';
 import { formataPreco } from '@/contexts/moeda';
 import { confirmarConsumoEstoque } from '@/services/estoqueReservaService';
 import { registrarSaida } from '@/services/movimentacaoEstoqueService';
-// Tipos locais para evitar `any` ao enviar payloads ao backend e ao Mercado Pago
-type BackendPedidoPayload = Omit<PedidoLocal, 'id'> & { tipo: 'online'; usuarioId: number };
 
-type PreferenceItem = { title: string; unit_price: number; quantity: number };
-type PreferenceData = {
+// ⚠️ CREDENCIAIS MERCADO PAGO - SOMENTE PARA TESTES
+// Em produção, estas chaves devem estar no backend ou em variáveis de ambiente seguras
+const MP_PUBLIC_KEY = 'APP_USR-c1f99119-2376-47f9-b456-1fa509473fb6';
+const MP_ACCESS_TOKEN = 'APP_USR-3542135147633802-102621-efdb375d6e6fab25f7ab0c586304c0d3-2939944844';
+const MP_FORCE_SANDBOX = true;
+
+type PreferenceItem = { 
+  title: string; 
+  unit_price: number; 
+  quantity: number;
+  currency_id?: string;
+};
+
+type MercadoPagoPreference = {
   items: PreferenceItem[];
-  back_urls: { success: string; failure: string; pending: string };
-  external_reference: string;
+  back_urls: { 
+    success: string; 
+    failure: string; 
+    pending: string; 
+  };
   auto_return?: string;
+  external_reference?: string;
+  notification_url?: string;
 };
 
 const Checkout = () => {
@@ -45,13 +57,18 @@ const Checkout = () => {
   const navigate = useNavigate(); // Hook para navegação entre páginas
   const { user, profile } = useAuth(); // Pega o usuário autenticado do contexto
 
-  // Função para processar o pagamento do pedido via Mercado Pago
+  // Função para processar o pagamento via Mercado Pago - INTEGRAÇÃO DIRETA
   const handlePagamento = async () => {
     if (isProcessing) return;
     setIsProcessing(true);
 
     try {
-      console.log('🚀 Processando pedido online via Mercado Pago...', { carrinho, ambiente: environmentMode, total: totalCarrinho });
+      console.log('🚀 Processando pedido online via Mercado Pago...', { 
+        carrinho, 
+        ambiente: environmentMode, 
+        total: totalCarrinho,
+        forceSandbox: MP_FORCE_SANDBOX 
+      });
 
       // Confirmar consumo de estoque para todos os itens do carrinho
       carrinho.forEach(item => {
@@ -59,15 +76,103 @@ const Checkout = () => {
         registrarSaida(item.id, item.quantidade, 'venda_online', `pedido-online-${Date.now()}`);
       });
 
-      // Criar pedido no backend
-      // Montar payload do pedido. O backend exige `usuarioId`, então incluímos
-      // o id do usuário autenticado (user.id) ou fallback para profile.user_id.
-      const pedidoPayload: Omit<PedidoLocal, 'id'> & { tipo: 'online' } = {
+      // Salvar pedido no histórico local ANTES de processar pagamento
+      const pedidoId = `MP-${Date.now()}`;
+      salvarPedidoNoHistorico({
+        metodoPagamento: 'Mercado Pago',
+        itens: carrinho,
+        subtotal: subtotalCarrinho,
+        desconto: descontoCupom,
+        total: totalCarrinho,
+        nome: profile?.nome,
+      });
+
+      // 🔥 INTEGRAÇÃO DIRETA COM MERCADO PAGO
+      // Criar preferência diretamente na API do MP
+      const preferenceData: MercadoPagoPreference = {
+        items: carrinho.map(item => ({
+          title: item.nome,
+          unit_price: item.venda,
+          quantity: item.quantidade,
+          currency_id: 'BRL'
+        })),
+        back_urls: {
+          success: `${window.location.origin}/loja-online/historico?payment=success`,
+          failure: `${window.location.origin}/loja-online/checkout?payment=failure`,
+          pending: `${window.location.origin}/loja-online/historico?payment=pending`
+        },
+        external_reference: pedidoId,
+      };
+
+      const isLocalhost = ['localhost', '127.0.0.1', '[::1]'].includes(window.location.hostname);
+      if (!isLocalhost) {
+        preferenceData.auto_return = 'approved';
+      }
+
+      console.log('📝 Criando preferência MP:', preferenceData);
+
+      // Chamar API do Mercado Pago diretamente
+      const mpApiUrl = 'https://api.mercadopago.com/checkout/preferences';
+      
+      const mpResponse = await fetch(mpApiUrl, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${MP_ACCESS_TOKEN}`
+        },
+        body: JSON.stringify(preferenceData)
+      });
+
+      if (!mpResponse.ok) {
+        const errorText = await mpResponse.text();
+        console.error('❌ Erro na resposta do MP:', errorText);
+        throw new Error(`Erro ao criar preferência MP: ${mpResponse.status}`);
+      }
+
+      const preference = await mpResponse.json();
+      console.log('✅ Preferência MP criada:', preference);
+
+      // Determinar URL de checkout baseado no modo
+      let checkoutUrl = '';
+      
+      if (MP_FORCE_SANDBOX || environmentMode === 'sandbox') {
+        checkoutUrl = preference.sandbox_init_point || preference.init_point;
+        console.log('🧪 Usando modo SANDBOX');
+      } else {
+        checkoutUrl = preference.init_point;
+        console.log('🚀 Usando modo PRODUÇÃO');
+      }
+
+      if (!checkoutUrl) {
+        throw new Error('Resposta do MP não contém URL de checkout');
+      }
+
+      // Limpar carrinho e fechar modal
+      limparCarrinho();
+      setShowPagamentoModal(false);
+
+      toast({
+        title: '✅ Redirecionando para Mercado Pago',
+        description: `Checkout ${MP_FORCE_SANDBOX || environmentMode === 'sandbox' ? 'Teste (Sandbox)' : 'Produção'}`,
+        duration: 3000,
+      });
+
+      // Redirecionar para checkout do Mercado Pago
+      console.log('🔗 Redirecionando para:', checkoutUrl);
+      window.location.href = checkoutUrl;
+
+      /* ===============================================
+         🔒 CÓDIGO BACKEND (COMENTADO PARA REFERÊNCIA)
+         ===============================================
+         
+      // MODO BACKEND: Criar pedido e preferência via API
+      const backendUrl = import.meta.env.VITE_BACKEND_URL || 'http://localhost:8000';
+      
+      const pedidoPayload = {
         numeroPedido: 0,
         mesaId: 0,
         mesaNome: '',
         status: 'Pendente',
-        // tipo é exigido pelo backend (schemas.PedidoCreate.tipo)
         tipo: 'online',
         itens: carrinho.map(item => ({
           id: item.id,
@@ -81,24 +186,12 @@ const Checkout = () => {
         dataHora: new Date().toISOString(),
         atendente: profile?.nome ?? 'Cliente',
         observacoes: undefined,
-      };
-
-      // O backend espera `usuarioId` no body do pedido. Construímos um objeto
-      // de request que inclui esse campo. Para manter compatibilidade de tipos
-      // com o serviço existente (PedidoLocal não define `usuarioId`), fazemos
-      // um cast ao enviar — isto apenas evita erro de tipagem TS, o JSON enviado
-      // terá `usuarioId` corretamente.
-      const backendPedidoPayload: BackendPedidoPayload = {
-        ...pedidoPayload,
         usuarioId: user?.id ?? Number(profile?.user_id ?? 0),
       };
 
-      const pedidoCriado = await apiServices.pedidoService.create(backendPedidoPayload);
-      console.log('🌐 Pedido criado no backend:', pedidoCriado);
-
-      // Montar payload de preferência para Mercado Pago
-      const backendUrl = import.meta.env.VITE_BACKEND_URL || 'http://localhost:8000';
-      const preferenceData: PreferenceData = {
+      const pedidoCriado = await apiServices.pedidoService.create(pedidoPayload);
+      
+      const preferenceData = {
         items: carrinho.map(item => ({
           title: item.nome,
           unit_price: item.venda,
@@ -112,68 +205,28 @@ const Checkout = () => {
         external_reference: String(pedidoCriado.id)
       };
 
-      // Detectar se estamos em ambiente localhost (Mercado Pago não aceita auto_return com URLs locais)
-      const isLocalhost = ['localhost', '127.0.0.1', '[::1]'].includes(window.location.hostname);
-      if (!isLocalhost) {
-        preferenceData.auto_return = 'approved';
-      }
-
-      // Solicitar ao backend que crie a preferência no Mercado Pago
       const backendRes = await fetch(`${backendUrl}/mp/create_preference/`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(preferenceData)
       });
 
-      if (!backendRes.ok) {
-        const text = await backendRes.text().catch(() => '');
-        throw new Error(`Erro ao criar preferência de pagamento no Mercado Pago: ${backendRes.status} ${text}`);
-      }
-
       const preference = await backendRes.json();
-      console.log('✅ Preferência MP criada:', preference);
-
-      // Escolher URL baseado no ambiente selecionado
-      const checkoutUrl = environmentMode === 'sandbox' 
+      checkoutUrl = environmentMode === 'sandbox' 
         ? (preference.sandbox_init_point || preference.init_point)
         : preference.init_point;
         
-      if (!checkoutUrl) {
-        throw new Error('Resposta do Mercado Pago não contém URL de checkout (init_point)');
-      }
-
-      // Salvar pedido no histórico local antes de redirecionar
-      salvarPedidoNoHistorico({
-        metodoPagamento: 'Mercado Pago',
-        itens: carrinho,
-        subtotal: subtotalCarrinho,
-        desconto: descontoCupom,
-        total: totalCarrinho,
-        nome: profile?.nome,
-      });
-
-      // Limpar carrinho e fechar modal
-      limparCarrinho();
-      setShowPagamentoModal(false);
-
-      toast({
-        title: 'Redirecionando para Mercado Pago',
-        description: `Você será levado ao checkout do Mercado Pago (${environmentMode === 'sandbox' ? 'Teste' : 'Produção'}).`,
-        duration: 3000,
-      });
-
-      // Redirecionar para checkout do Mercado Pago
-      window.location.href = checkoutUrl;
+      =============================================== */
     } catch (error: unknown) {
       console.error('❌ Erro ao processar pedido:', error);
       
       const errorMessage = error instanceof Error ? error.message : 'Erro desconhecido';
       
       toast({
-        title: "Erro ao enviar pedido",
-        description: `Não foi possível registrar o pedido. ${errorMessage}`,
+        title: "Erro ao processar pagamento",
+        description: errorMessage,
         variant: "destructive",
-        duration: 3000,
+        duration: 5000,
       });
     } finally {
       setIsProcessing(false);

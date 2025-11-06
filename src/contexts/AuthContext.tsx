@@ -100,32 +100,62 @@ const AuthProviderComponent = ({ children }: AuthProviderProps) => {
     const init = async () => {
       setIsLoading(true);
       try {
-        const me = await userService.me();
-        const data = me as unknown as BackendUser & { session?: BackendSession };
-        const backendUser: BackendUser = {
-          id: Number((data as Partial<BackendUser>)?.id ?? 0),
-          email: data.email,
-          nome: data.nome,
-          tipo: data.tipo,
-          created_at: data.created_at,
-          updated_at: data.updated_at,
-          ...data,
-        };
-        setUser(backendUser);
-        setProfile({
-          id: String(data.id),
-          user_id: String(data.id),
-          nome: data.nome,
-          email: data.email,
-          tipo: (data.tipo || 'online') as Profile['tipo'],
-        });
-        setSession((data.session ?? null) as BackendSession | null);
-  try { authStorage.setUser({ id: Number((data as Partial<BackendUser>)?.id ?? 0), nome: data.nome, email: data.email, type: (data.tipo === 'fisica' || data.tipo === 'online') ? data.tipo : 'online', tipo: data.tipo, createdAt: data.created_at ? new Date(data.created_at) : new Date() }); } catch (e) { console.debug(e); }
+        // PRIORIDADE: Usar localStorage primeiro
+        const localUser = authStorage.getUser();
+        if (localUser) {
+          const backendUser: BackendUser = {
+            id: localUser.id,
+            username: localUser.nome,
+            email: localUser.email,
+            nome: localUser.nome,
+            tipo: localUser.tipo || (localUser.type === 'fisica' ? 'fisica' : 'online'),
+            created_at: localUser.createdAt?.toISOString(),
+          };
+          setUser(backendUser);
+          setProfile({
+            id: String(localUser.id),
+            user_id: String(localUser.id),
+            nome: localUser.nome,
+            email: localUser.email,
+            tipo: backendUser.tipo,
+          });
+          console.log('✅ Autenticação via localStorage');
+        } else {
+          setUser(null);
+          setProfile(null);
+        }
+
+        /* BACKEND FASTAPI - COMENTADO PARA USAR LOCALSTORAGE
+        // Tenta sincronizar com backend se disponível
+        try {
+          const me = await userService.me();
+          const data = me as unknown as BackendUser & { session?: BackendSession };
+          const backendUser: BackendUser = {
+            id: Number((data as Partial<BackendUser>)?.id ?? 0),
+            email: data.email,
+            nome: data.nome,
+            tipo: data.tipo,
+            created_at: data.created_at,
+            updated_at: data.updated_at,
+            ...data,
+          };
+          setUser(backendUser);
+          setProfile({
+            id: String(data.id),
+            user_id: String(data.id),
+            nome: data.nome,
+            email: data.email,
+            tipo: (data.tipo || 'online') as Profile['tipo'],
+          });
+          setSession((data.session ?? null) as BackendSession | null);
+          try { authStorage.setUser({ id: Number((data as Partial<BackendUser>)?.id ?? 0), nome: data.nome, email: data.email, type: (data.tipo === 'fisica' || data.tipo === 'online') ? data.tipo : 'online', tipo: data.tipo, createdAt: data.created_at ? new Date(data.created_at) : new Date() }); } catch (e) { console.debug(e); }
+        } catch (backendErr) {
+          console.debug('Backend não disponível, usando apenas localStorage');
+        }
+        */
       } catch (err) {
         const e = err as unknown;
-        console.error('Error initializing auth from backend:', e);
-        // Em caso de erro (ex: backend reiniciado) ou se usuário não autenticado, limpar o usuário local
-        try { authStorage.removeUser(); } catch (e) { console.debug(e); }
+        console.error('Error initializing auth:', e);
         setUser(null);
         setProfile(null);
         setSession(null);
@@ -176,12 +206,62 @@ const AuthProviderComponent = ({ children }: AuthProviderProps) => {
 
   async function signIn(email: string, password: string): Promise<AuthResult> {
     try {
-      // usa userService para login (centralizado)
-      await userService.login(email, password);
-      // Atualiza estado chamando /auth/me (cookie httpOnly)
-      await fetchProfile();
+      // Tenta login via BACKEND primeiro
+      try {
+        await userService.login(email, password);
+        // backend usa cookie httpOnly; buscar /auth/me para popular estado
+        await fetchProfile();
+        toast({ title: 'Login realizado', description: 'Bem-vindo!' });
+        return { error: null, user: user ?? null, session: session ?? null };
+      } catch (backendErr) {
+        console.debug('Backend login falhou, tentando fallback localStorage:', backendErr);
+        // se backend falhar, continuar para fallback localStorage
+      }
+
+      // FALLBACK: LOGIN VIA LOCALSTORAGE
+      const allUsers = authStorage.getAllUsers();
+      const foundUser = allUsers.find(u => u.email === email);
+      
+      if (!foundUser) {
+        toast({ 
+          variant: 'destructive',
+          title: 'Erro no login', 
+          description: 'Usuário não encontrado' 
+        });
+        return { error: 'Usuário não encontrado' };
+      }
+
+      // Verifica senha (em produção deve ser hash)
+      const storedUser = foundUser as unknown as { password?: string };
+      if (storedUser.password !== password) {
+        toast({ 
+          variant: 'destructive',
+          title: 'Erro no login', 
+          description: 'Senha incorreta' 
+        });
+        return { error: 'Senha incorreta' };
+      }
+
+      const backendUser: BackendUser = {
+        id: foundUser.id,
+        username: foundUser.nome,
+        email: foundUser.email,
+        nome: foundUser.nome,
+        tipo: foundUser.tipo || (foundUser.type === 'fisica' ? 'fisica' : 'online'),
+      };
+
+      setUser(backendUser);
+      setProfile({
+        id: String(foundUser.id),
+        user_id: String(foundUser.id),
+        nome: foundUser.nome,
+        email: foundUser.email,
+        tipo: backendUser.tipo,
+      });
+      authStorage.setUser(foundUser);
+
       toast({ title: 'Login realizado', description: 'Bem-vindo!' });
-      return { error: null, user, session };
+      return { error: null, user: backendUser, session: null };
     } catch (err) {
       const e = err as unknown;
       console.error('signIn error:', e);
@@ -191,16 +271,62 @@ const AuthProviderComponent = ({ children }: AuthProviderProps) => {
 
   async function signUp(email: string, password: string, nome: string, tipo: 'fisica' | 'online' = 'online'): Promise<AuthResult> {
     try {
-      // usa userService para registrar
-  await userService.register({ email, password, nome, tipo });
-      // após registro o backend faz auto-login via cookie; buscar /auth/me para popular o estado
+      // Tenta registrar no BACKEND primeiro
       try {
+        await userService.register({ email, password, nome, tipo });
+        // backend pode fazer auto-login via cookie; buscar perfil
         await fetchProfile();
-      } catch (e) {
-        console.warn('fetchProfile após registro falhou:', e);
+        toast({ title: 'Registro realizado', description: 'Conta criada com sucesso.' });
+        return { error: null, user: user ?? null, session: session ?? null };
+      } catch (backendErr) {
+        console.debug('Backend register falhou, tentando fallback localStorage:', backendErr);
+        // se backend falhar, continuar para fallback localStorage
       }
+
+      // FALLBACK: REGISTRO VIA LOCALSTORAGE
+      const allUsers = authStorage.getAllUsers();
+      // Verifica se email já existe
+      if (allUsers.find(u => u.email === email)) {
+        toast({ 
+          variant: 'destructive',
+          title: 'Erro no registro', 
+          description: 'Email já cadastrado' 
+        });
+        return { error: 'Email já cadastrado' };
+      }
+
+      const newUser = {
+        id: allUsers.length > 0 ? Math.max(...allUsers.map(u => u.id)) + 1 : 1,
+        nome,
+        email,
+        password, // Em produção deve ser hash
+        type: tipo,
+        tipo,
+        createdAt: new Date(),
+      };
+
+      authStorage.addUser(newUser);
+      
+      const backendUser: BackendUser = {
+        id: newUser.id,
+        username: newUser.nome,
+        email: newUser.email,
+        nome: newUser.nome,
+        tipo: newUser.tipo,
+      };
+
+      setUser(backendUser);
+      setProfile({
+        id: String(newUser.id),
+        user_id: String(newUser.id),
+        nome: newUser.nome,
+        email: newUser.email,
+        tipo: newUser.tipo,
+      });
+      authStorage.setUser(newUser);
+
       toast({ title: 'Registro realizado', description: 'Conta criada com sucesso.' });
-      return { error: null, user, session };
+      return { error: null, user: backendUser, session: null };
     } catch (err) {
       const e = err as unknown;
       console.error('signUp error:', e);
@@ -210,6 +336,15 @@ const AuthProviderComponent = ({ children }: AuthProviderProps) => {
 
   const signOut = async () => {
     try {
+      // LOGOUT VIA LOCALSTORAGE
+      setUser(null);
+      setProfile(null);
+      setSession(null);
+      authStorage.removeUser();
+      toast({ title: 'Logout realizado', description: 'Até logo!' });
+      return { error: null };
+
+      /* BACKEND FASTAPI - COMENTADO PARA USAR LOCALSTORAGE
       await userService.logout();
       setUser(null);
       setProfile(null);
@@ -217,6 +352,7 @@ const AuthProviderComponent = ({ children }: AuthProviderProps) => {
       try { authStorage.removeUser(); } catch (e) { console.debug(e); }
       toast({ title: 'Logout realizado', description: 'Até logo!' });
       return { error: null };
+      */
     } catch (err) {
       const e = err as unknown;
       const msg = (e as Error)?.message ?? String(e);
@@ -225,7 +361,7 @@ const AuthProviderComponent = ({ children }: AuthProviderProps) => {
         title: 'Erro no logout',
         description: msg,
       });
-      try { authStorage.removeUser(); } catch (e) { console.debug(e); }
+      authStorage.removeUser();
       return { error: msg };
     }
   };

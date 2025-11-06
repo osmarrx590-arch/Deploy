@@ -87,6 +87,9 @@ _default_origins = [
     "http://localhost:3000",
     "http://127.0.0.1:8080",
     "http://127.0.0.1:3000",
+    # Vite default dev server (5173)
+    "http://localhost:5173",
+    "http://127.0.0.1:5173",
     "https://comerce-web-frontend.onrender.com",
 ]
 
@@ -104,6 +107,12 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+# Health check endpoint
+@app.get("/health")
+def health_check():
+    """Endpoint para verificar se o backend está rodando"""
+    return {"status": "ok", "message": "Backend is running"}
 
 # User endpoints
 @app.post("/users/", response_model=schemas.User)
