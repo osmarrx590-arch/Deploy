@@ -135,8 +135,21 @@ def auth_login(payload: dict, response: Response, db: Session = Depends(get_db))
     if not user or not user.check_password(password):
         raise HTTPException(status_code=401, detail='Invalid credentials')
 
+    # Configuração de cookie configurável por variáveis de ambiente.
+    # Em produção (frontend em HTTPS e domínio diferente) configure:
+    #   SESSION_COOKIE_SAMESITE=none
+    #   SESSION_COOKIE_SECURE=true
+    cookie_samesite = os.environ.get('SESSION_COOKIE_SAMESITE', 'lax')
+    cookie_secure = os.environ.get('SESSION_COOKIE_SECURE', 'false').lower() == 'true'
+
     # Salva cookie de sessão (httpOnly) e retorna payload serializável
-    response.set_cookie(key='session', value=str(user.id), httponly=True, samesite='lax')
+    response.set_cookie(
+        key='session',
+        value=str(user.id),
+        httponly=True,
+        samesite=cookie_samesite,
+        secure=cookie_secure,
+    )
     try:
         # Usa o schema Pydantic para garantir serialização correta do usuário
         user_data = schemas.User.from_orm(user).dict()
